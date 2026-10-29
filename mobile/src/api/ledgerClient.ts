@@ -401,3 +401,27 @@ export async function allocatePaymentManually(
   }
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// AI Brief Explanation (facts-only, server-side validated)
+// ---------------------------------------------------------------------------
+export type ActionType = 'counter_notice' | 'qr_offer_mock';
+
+export interface BriefExplanationResponse {
+  explanation: string;
+  evidence_ids: string[];
+  proposed_action: string;
+  action_type: ActionType;
+  fallback_used: boolean;
+  validation_errors: string[];
+}
+
+export async function fetchBriefExplanation(
+  persona: Persona = 'kirana',
+): Promise<BriefExplanationResponse> {
+  const res = await fetch(
+    `${API_BASE_URL}/insights/explanation?persona=${encodeURIComponent(persona)}`,
+  );
+  if (!res.ok) throw new Error(`Fetch brief explanation failed with HTTP ${res.status}`);
+  return res.json();
+}

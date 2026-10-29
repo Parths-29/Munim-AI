@@ -3,7 +3,7 @@
  *
  * Provides tabbed navigation across:
  * 1. Copilot (Voice/text commands, credit/repayment, customer resolve, derived balance,
- *    and end-to-end "Aaj kaisa raha?" insights brief slice)
+ *    and end-to-end "Aaj kaisa raha?" insights brief slice with AI explanation)
  * 2. Pay Review (GET /payments/review & merchant-confirmed manual allocation)
  * 3. Inventory (Stock lookup, stockout observation, physical counts)
  * 4. Timeline (Activity stream from GET /events)
@@ -14,6 +14,7 @@
  * - Balance is derived, not LLM-invented.
  * - Stockout is an observation; counts require physical confirmation.
  * - "Aaj kaisa raha?" loads /insights/facts?persona=kirana with caveats and mocked action.
+ * - AI explanation is server-side, facts-only validated with deterministic fallback.
  */
 
 import React, { useState, useCallback } from 'react';
@@ -37,7 +38,9 @@ import {
   postCredit,
   postRepayment,
   fetchInsightFacts,
+  fetchBriefExplanation,
   FactsResponse,
+  BriefExplanationResponse,
 } from '@/api/ledgerClient';
 import PaymentReviewScreen from '@/features/paymentReview/PaymentReviewScreen';
 import InventoryScreen from '@/features/inventory/InventoryScreen';
@@ -75,15 +78,19 @@ export default function HomeScreen() {
 
   // "Aaj kaisa raha?" end-to-end slice state
   const [insightsBrief, setInsightsBrief] = useState<FactsResponse | null>(null);
+  const [aiExplanation, setAiExplanation] = useState<BriefExplanationResponse | null>(null);
   const [mockOfferApproved, setMockOfferApproved] = useState(false);
-  const [mockOfferText, setMockOfferText] = useState("Weekend special: ask us about today's offer");
 
-  // Trigger "Aaj kaisa raha?" insight slice
+  // Trigger "Aaj kaisa raha?" insight slice + AI explanation
   const handleLoadInsightsBrief = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchInsightFacts('kirana');
-      setInsightsBrief(data);
+      const [factsData, explanationData] = await Promise.all([
+        fetchInsightFacts('kirana'),
+        fetchBriefExplanation('kirana').catch(() => null),
+      ]);
+      setInsightsBrief(factsData);
+      setAiExplanation(explanationData);
       setMockOfferApproved(false);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -333,7 +340,7 @@ export default function HomeScreen() {
                     <Ionicons name="bar-chart" size={18} color="#0f3460" style={{ marginRight: 6 }} />
                     <Text style={styles.briefTitle}>Business Brief · Kirana Persona</Text>
                   </View>
-                  <TouchableOpacity onPress={() => setInsightsBrief(null)}>
+                  <TouchableOpacity onPress={() => { setInsightsBrief(null); setAiExplanation(null); }}>
                     <Ionicons name="close-circle-outline" size={20} color="#6c757d" />
                   </TouchableOpacity>
                 </View>
@@ -344,6 +351,48 @@ export default function HomeScreen() {
                     ⚠ SYNTHETIC DATA — Derived from deterministic test fixture. Not Paytm data.
                   </Text>
                 </View>
+
+                {/* ── AI Explanation Card ──────────────────────────────── */}
+                {aiExplanation && (
+                  <View style={styles.aiExplanationCard}>
+                    <View style={styles.aiExplanationHeader}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Ionicons name="sparkles" size={14} color="#0f3460" style={{ marginRight: 4 }} />
+                        <Text style={styles.aiExplanationTitle}>
+                          {aiExplanation.fallback_used ? 'Summary (Deterministic)' : 'AI Summary (Facts-Only)'}
+                        </Text>
+                      </View>
+                      {aiExplanation.fallback_used && (
+                        <View style={styles.fallbackBadge}>
+                          <Text style={styles.fallbackBadgeText}>FALLBACK</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.aiExplanationText}>{aiExplanation.explanation}</Text>
+
+                    {/* Evidence tags */}
+                    {aiExplanation.evidence_ids.length > 0 && (
+                      <View style={styles.evidenceRow}>
+                        <Text style={styles.evidenceLabel}>Evidence:</Text>
+                        {aiExplanation.evidence_ids.map((eid) => (
+                          <View key={eid} style={styles.evidenceTag}>
+                            <Text style={styles.evidenceTagText}>{eid}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
+                    {/* Validation errors if any */}
+                    {aiExplanation.validation_errors.length > 0 && (
+                      <View style={styles.validationErrorBox}>
+                        <Text style={styles.validationErrorTitle}>Fallback reason:</Text>
+                        {aiExplanation.validation_errors.map((e, i) => (
+                          <Text key={i} style={styles.validationErrorItem}>• {e}</Text>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                )}
 
                 {/* Comparison Period */}
                 <View style={styles.periodBox}>
@@ -387,7 +436,7 @@ export default function HomeScreen() {
                   </Text>
                 </View>
 
-                {/* Clearly Mocked Offer Action */}
+                {/* Proposed Merchant Action — from AI or fallback */}
                 <View style={styles.mockActionCard}>
                   <View style={styles.mockActionHeader}>
                     <Text style={styles.mockActionTitle}>Proposed Merchant Action (Mock)</Text>
@@ -396,13 +445,16 @@ export default function HomeScreen() {
                     </View>
                   </View>
                   <Text style={styles.mockActionDesc}>
-                    Optional shop-side experiment. UPI trends cannot identify which products are slow-moving; choose the item and offer yourself:
+                    {aiExplanation?.proposed_action ??
+                      'Optional shop-side experiment. UPI trends cannot identify which products are slow-moving; choose the item and offer yourself:'}
                   </Text>
-                  <TextInput
-                    style={styles.mockActionInput}
-                    value={mockOfferText}
-                    onChangeText={setMockOfferText}
-                  />
+                  {aiExplanation?.action_type && (
+                    <View style={styles.actionTypeBadge}>
+                      <Text style={styles.actionTypeBadgeText}>
+                        Action type: {aiExplanation.action_type}
+                      </Text>
+                    </View>
+                  )}
 
                   {mockOfferApproved ? (
                     <View style={styles.approvedBanner}>
@@ -607,6 +659,55 @@ const styles = StyleSheet.create({
     borderColor: '#ffc107',
   },
   briefSyntheticText: { fontSize: 11, fontWeight: '700', color: '#856404', textAlign: 'center' },
+
+  // ── AI Explanation Card
+  aiExplanationCard: {
+    backgroundColor: '#e8f4fd',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#b6d4fe',
+  },
+  aiExplanationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  aiExplanationTitle: { fontSize: 13, fontWeight: '700', color: '#0f3460' },
+  aiExplanationText: { fontSize: 13, color: '#212529', lineHeight: 19, marginBottom: 8 },
+  fallbackBadge: {
+    backgroundColor: '#e2e3e5',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  fallbackBadgeText: { fontSize: 9, fontWeight: '700', color: '#383d41' },
+  evidenceRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  evidenceLabel: { fontSize: 10, fontWeight: '700', color: '#495057' },
+  evidenceTag: {
+    backgroundColor: '#cfe2ff',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  evidenceTagText: { fontSize: 9, fontWeight: '600', color: '#084298' },
+  validationErrorBox: {
+    backgroundColor: '#fff3cd',
+    padding: 6,
+    borderRadius: 4,
+    marginTop: 4,
+  },
+  validationErrorTitle: { fontSize: 10, fontWeight: '700', color: '#856404' },
+  validationErrorItem: { fontSize: 10, color: '#856404' },
+
   periodBox: {
     backgroundColor: '#e8f0fe',
     padding: 8,
@@ -655,16 +756,15 @@ const styles = StyleSheet.create({
   mockBadge: { backgroundColor: '#e2e3e5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   mockBadgeText: { fontSize: 9, fontWeight: '700', color: '#383d41' },
   mockActionDesc: { fontSize: 11, color: '#6c757d', marginBottom: 6 },
-  mockActionInput: {
-    height: 36,
-    borderWidth: 1,
-    borderColor: '#ced4da',
-    borderRadius: 4,
+  actionTypeBadge: {
+    backgroundColor: '#d1ecf1',
     paddingHorizontal: 8,
-    fontSize: 12,
-    backgroundColor: '#ffffff',
+    paddingVertical: 3,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
     marginBottom: 8,
   },
+  actionTypeBadgeText: { fontSize: 10, fontWeight: '600', color: '#0c5460' },
   approveBtn: {
     flexDirection: 'row',
     alignItems: 'center',

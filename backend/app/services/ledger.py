@@ -1,5 +1,6 @@
 """Append-only customer credit ledger and alias resolution."""
 
+import sqlite3
 import unicodedata
 import uuid
 from datetime import datetime, timezone

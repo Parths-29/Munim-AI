@@ -176,6 +176,19 @@ class BusinessFactsView(StrictModel):
     allowed_actions: list[Literal["counter_notice", "qr_offer_mock", "review_payment", "confirm_stock_count"]]
 
 
+class BriefExplanationRequest(StrictModel):
+    persona: Literal["kirana", "tea_stall", "medical_store"] = "kirana"
+
+
+class BriefExplanationResponse(StrictModel):
+    explanation: str
+    evidence_ids: list[str]
+    proposed_action: str
+    action_type: Literal["counter_notice", "qr_offer_mock"]
+    fallback_used: bool
+    validation_errors: list[str] = Field(default_factory=list)
+
+
 class PayerMappingCreate(StrictModel):
     payer_token: str = Field(min_length=1, max_length=100)
     customer_id: str = Field(min_length=1, max_length=100)
