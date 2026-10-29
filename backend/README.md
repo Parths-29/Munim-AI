@@ -1,6 +1,6 @@
 # Munim-AI backend scaffold
 
-The current backend slice provides a health endpoint, deterministic synthetic merchant facts, synthetic-shop customer/alias records, an append-only credit/repayment ledger, verified stock counts, stockout observations, and an append-only activity timeline. It does not yet implement voice/LLM commands, payment reconciliation, or live integrations.
+The current backend slice provides deterministic synthetic merchant facts, synthetic-shop customer/alias records, an append-only credit/repayment ledger, verified stock counts, stockout observations, mock payment intake/review, and an append-only activity timeline. It does not implement voice/LLM commands or live Paytm integrations.
 
 ## Requirements
 
@@ -51,8 +51,12 @@ The health response confirms only that the local API process is responding. It d
 | `POST` | `/inventory/stockout-observations` | Record a merchant stockout report without changing on-hand quantity. |
 | `POST` | `/inventory/counts` | Record a confirmed physical count as an append-only movement. |
 | `GET` | `/events?limit=50` | Read recent business events, source, status, and summary. |
+| `POST` | `/payments/payer-mappings` | Link a synthetic payer token to a demo customer after confirmation. |
+| `POST` | `/payments/intake` | Accept a provider-mock event; auto-allocate only on exact mapping and safe outstanding balance. |
+| `GET` | `/payments/review` | List unmatched or review-required successful mock payments. |
+| `POST` | `/payments/{event_id}/allocate` | Manually allocate a reviewed event after merchant confirmation and balance validation. |
 
-For all writes, the caller supplies a stable `idempotency_key`, a unique `source_event_id`, and `confirmed`. Use the accepted command ID as the idempotency key. Replaying either the key or source event has one effect; reusing one for different operation details returns `409 Conflict`.
+Customer, ledger, and inventory writes use a stable `idempotency_key`, a unique `source_event_id`, and explicit `confirmed` state. Use the accepted command ID as the idempotency key. Replaying either key or source event has one effect; reusing one for different operation details returns `409 Conflict`. Payment endpoints have their own documented event and confirmation rules below.
 
 Example credit request:
 
@@ -78,3 +82,5 @@ python seed_demo.py
 ```
 
 The seed command is designed to be replay-safe. It creates the synthetic Raju customer and a ₹500 opening credit, plus a Maggi product with 12 packs counted on hand. It prints the generated IDs and balances for the mobile demo.
+
+Mock payment events never claim a live provider connection. Non-success events are ignored for ledger allocation; missing payer mapping and over-balance amounts go to review. Manual allocation requires explicit confirmation, and the full payment amount must fit the outstanding balance; this prototype does not create automatic partial allocations.

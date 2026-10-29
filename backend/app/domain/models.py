@@ -174,3 +174,62 @@ class BusinessFactsView(StrictModel):
     evidence_ids: list[str]
     caveats: list[str]
     allowed_actions: list[Literal["counter_notice", "qr_offer_mock", "review_payment", "confirm_stock_count"]]
+
+
+class PayerMappingCreate(StrictModel):
+    payer_token: str = Field(min_length=1, max_length=100)
+    customer_id: str = Field(min_length=1, max_length=100)
+    confirmed: bool
+    idempotency_key: str = Field(min_length=8, max_length=150)
+
+
+class PayerMappingView(StrictModel):
+    mapping_id: str
+    customer_id: str
+    status: str
+
+
+class PaymentIntakeCreate(StrictModel):
+    event_id: str = Field(min_length=1, max_length=120)
+    amount_paise: int = Field(strict=True, gt=0)
+    status: Literal["SUCCESS", "PENDING", "FAILED", "REVERSED"]
+    occurred_at: datetime
+    idempotency_key: str = Field(min_length=8, max_length=150)
+    payer_token: str | None = Field(default=None, max_length=100)
+    source: Literal["provider_mock"] = "provider_mock"
+
+
+class PaymentIntakeView(StrictModel):
+    event_id: str
+    amount_paise: int
+    status: str
+    resolution_status: str
+    reason: str | None
+    allocation_entry_id: str | None
+    created_at: datetime
+    idempotent_replay: bool = False
+
+
+class PaymentReviewView(StrictModel):
+    event_id: str
+    amount_paise: int
+    status: str
+    resolution_status: str
+    reason: str | None
+    occurred_at: datetime
+    created_at: datetime
+
+
+class PaymentAllocationCreate(StrictModel):
+    customer_id: str = Field(min_length=1, max_length=100)
+    confirmed: bool
+    idempotency_key: str = Field(min_length=8, max_length=150)
+
+
+class PaymentAllocationView(StrictModel):
+    event_id: str
+    customer_id: str
+    amount_paise: int
+    allocation_entry_id: str
+    status: Literal["ALLOCATED"] = "ALLOCATED"
+    idempotent_replay: bool = False
