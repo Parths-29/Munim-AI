@@ -65,6 +65,103 @@ BEFORE DELETE ON ledger_entries
 BEGIN
     SELECT RAISE(ABORT, 'ledger entries are append-only');
 END;
+
+CREATE TABLE IF NOT EXISTS products (
+    product_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    unit TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    UNIQUE (shop_id, product_id)
+);
+
+CREATE TABLE IF NOT EXISTS product_aliases (
+    alias_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    alias TEXT NOT NULL,
+    alias_normalized TEXT NOT NULL,
+    FOREIGN KEY (shop_id, product_id) REFERENCES products(shop_id, product_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_product_alias_lookup
+    ON product_aliases(shop_id, alias_normalized);
+
+CREATE TABLE IF NOT EXISTS inventory_movements (
+    movement_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    quantity_delta INTEGER NOT NULL,
+    counted_quantity INTEGER NOT NULL CHECK (counted_quantity >= 0),
+    unit TEXT NOT NULL,
+    reason TEXT NOT NULL CHECK (reason = 'PHYSICAL_COUNT'),
+    source_event_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL CHECK (status = 'POSTED'),
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (shop_id, product_id) REFERENCES products(shop_id, product_id),
+    UNIQUE (shop_id, source_event_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_inventory_product_time
+    ON inventory_movements(shop_id, product_id, created_at);
+
+CREATE TRIGGER IF NOT EXISTS inventory_movements_no_update
+BEFORE UPDATE ON inventory_movements
+BEGIN
+    SELECT RAISE(ABORT, 'inventory movements are append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS inventory_movements_no_delete
+BEFORE DELETE ON inventory_movements
+BEGIN
+    SELECT RAISE(ABORT, 'inventory movements are append-only');
+END;
+
+CREATE TABLE IF NOT EXISTS stockout_observations (
+    observation_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    source_event_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    source_utterance TEXT,
+    status TEXT NOT NULL CHECK (status = 'OBSERVED'),
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (shop_id, product_id) REFERENCES products(shop_id, product_id),
+    UNIQUE (shop_id, source_event_id)
+);
+
+CREATE TABLE IF NOT EXISTS business_events (
+    event_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    source_event_id TEXT NOT NULL,
+    source_channel TEXT NOT NULL CHECK (source_channel IN ('text', 'voice', 'provider_mock', 'system')),
+    source_utterance TEXT,
+    status TEXT NOT NULL CHECK (status IN ('POSTED', 'OBSERVED')),
+    summary TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    UNIQUE (shop_id, source_event_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_business_events_time
+    ON business_events(shop_id, created_at DESC);
+
+CREATE TRIGGER IF NOT EXISTS business_events_no_update
+BEFORE UPDATE ON business_events
+BEGIN
+    SELECT RAISE(ABORT, 'business events are append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS business_events_no_delete
+BEFORE DELETE ON business_events
+BEGIN
+    SELECT RAISE(ABORT, 'business events are append-only');
+END;
 """
 
 

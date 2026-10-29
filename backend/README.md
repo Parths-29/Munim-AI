@@ -1,6 +1,6 @@
 # Munim-AI backend scaffold
 
-The current backend slice provides a health endpoint, synthetic-shop customer/alias records, and an append-only credit/repayment ledger. It does not yet implement voice/LLM commands, stock, payment reconciliation, or live integrations.
+The current backend slice provides a health endpoint, synthetic-shop customer/alias records, an append-only credit/repayment ledger, verified stock counts, stockout observations, and an append-only activity timeline. It does not yet implement voice/LLM commands, payment reconciliation, or live integrations.
 
 ## Requirements
 
@@ -44,6 +44,12 @@ The health response confirms only that the local API process is responding. It d
 | `GET` | `/ledger/customers/{customer_id}/balance` | Derive balance from posted ledger entries. |
 | `POST` | `/ledger/credits` | Append a confirmed credit entry. |
 | `POST` | `/ledger/repayments` | Append a confirmed repayment, rejecting amounts above the current due balance. |
+| `POST` | `/products` | Add a confirmed synthetic product with aliases and a unit. |
+| `GET` | `/products/resolve?query=Maggi` | Exact product alias lookup; does not guess. |
+| `GET` | `/inventory/products/{product_id}/stock` | Derive on-hand quantity from posted stock movements. |
+| `POST` | `/inventory/stockout-observations` | Record a merchant stockout report without changing on-hand quantity. |
+| `POST` | `/inventory/counts` | Record a confirmed physical count as an append-only movement. |
+| `GET` | `/events?limit=50` | Read recent business events, source, status, and summary. |
 
 For all writes, the caller supplies a stable `idempotency_key`, a unique `source_event_id`, and `confirmed`. Use the accepted command ID as the idempotency key. Replaying either the key or source event has one effect; reusing one for different operation details returns `409 Conflict`.
 
@@ -70,4 +76,4 @@ cd backend
 python seed_demo.py
 ```
 
-The seed command is designed to be replay-safe. It creates the synthetic Raju customer and a ₹500 opening credit once, then prints the customer ID and derived balance. The remaining canonical demo commands can build on this opening entry.
+The seed command is designed to be replay-safe. It creates the synthetic Raju customer and a ₹500 opening credit, plus a Maggi product with 12 packs counted on hand. It prints the generated IDs and balances for the mobile demo.
