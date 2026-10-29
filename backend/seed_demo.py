@@ -1,7 +1,8 @@
 """Create the repeatable synthetic Raju fixture for local demos."""
 
-from app.domain.models import CustomerCreate, LedgerWrite
+from app.domain.models import CustomerCreate, LedgerWrite, ProductCreate, StockCountCreate
 from app.services.database import DEMO_SHOP_ID, initialize_database
+from app.services.inventory import create_product, record_stock_count
 from app.services.ledger import create_customer, get_balance, post_credit
 
 
@@ -24,10 +25,29 @@ def main() -> None:
             confirmed=True,
         )
     )
+    maggi = create_product(
+        ProductCreate(
+            name="Maggi",
+            aliases=["Maggi noodles", "noodles"],
+            unit="pack",
+            confirmed=True,
+            idempotency_key="seed-product-maggi-v1",
+        )
+    )
+    record_stock_count(
+        StockCountCreate(
+            product_id=maggi.product_id,
+            counted_quantity=12,
+            source_event_id="seed-opening-stock-maggi-v1",
+            idempotency_key="seed-opening-stock-maggi-v1",
+            confirmed=True,
+        )
+    )
     balance = get_balance(customer.customer_id)
     print(f"Data mode: synthetic ({DEMO_SHOP_ID})")
     print(f"Customer: {customer.display_name} [{customer.customer_id}]")
     print(f"Opening balance due: ₹{balance.balance_due_paise / 100:.2f}")
+    print(f"Product: {maggi.name} [{maggi.product_id}] · opening stock: 12 {maggi.unit}s")
 
 
 if __name__ == "__main__":

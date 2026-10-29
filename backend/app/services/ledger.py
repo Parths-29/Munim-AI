@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 from app.domain.models import CustomerBalance, CustomerCreate, CustomerResolution, CustomerView, LedgerEntryView, LedgerWrite
 from app.services.database import DEMO_SHOP_ID, connect
+from app.services.events import append_event
 
 
 def normalize_alias(value: str) -> str:
@@ -54,6 +55,18 @@ def create_customer(request: CustomerCreate) -> CustomerView:
                 "INSERT INTO customer_aliases(alias_id, shop_id, customer_id, alias, alias_normalized) VALUES (?, ?, ?, ?, ?)",
                 (f"alias_{uuid.uuid4().hex[:12]}", DEMO_SHOP_ID, customer_id, alias, normalize_alias(alias)),
             )
+        append_event(
+            connection,
+            event_type="CUSTOMER_CREATED",
+            entity_type="CUSTOMER",
+            entity_id=customer_id,
+            source_event_id=key,
+            source_channel=request.source_channel,
+            source_utterance=request.source_utterance,
+            status="POSTED",
+            summary=f"Customer record created for {display_name}.",
+            idempotency_key=key,
+        )
         return _customer_view(connection, customer_id)
 
 
@@ -159,6 +172,18 @@ def _post_ledger_entry(request: LedgerWrite, entry_type: str) -> LedgerEntryView
             (entry_id, DEMO_SHOP_ID, request.customer_id, entry_type, request.amount_paise, request.source_event_id, request.idempotency_key, now),
         )
         row = connection.execute("SELECT * FROM ledger_entries WHERE entry_id = ?", (entry_id,)).fetchone()
+        append_event(
+            connection,
+            event_type=f"{entry_type}_POSTED",
+            entity_type="LEDGER_ENTRY",
+            entity_id=entry_id,
+            source_event_id=request.source_event_id,
+            source_channel=request.source_channel,
+            source_utterance=request.source_utterance,
+            status="POSTED",
+            summary=f"{entry_type.title()} of {request.amount_paise} paise recorded.",
+            idempotency_key=request.idempotency_key,
+        )
     return _entry_view(row)
 
 
