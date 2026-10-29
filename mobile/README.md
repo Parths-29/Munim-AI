@@ -1,11 +1,40 @@
-# Munim-AI Mobile — Phase 1 Scaffold
+# Munim-AI Mobile — KiranaOS Mobile Client
 
-**Owner:** Rachit (mobile UI) · **Phase:** 1 — scaffold only  
+**Owner:** Rachit (mobile UI)  
 **Expo SDK:** 58 · **React Native:** 0.88.0 · **TypeScript:** ~5.7.2
 
-> **Scope:** This is the minimal runnable Expo shell created in Phase 1.
-> No ledger, AI commands, payments, analytics, microphone, or backend
-> calls are wired up. Those belong to Phase 2 and later.
+> **Scope:** Merchant-facing Expo application connected to the synthetic KiranaOS backend slice (`backend-api-v0.md` / `origin/codex/payment-review`).
+> All data is strictly synthetic. No connection or access to Paytm live systems is claimed.
+
+---
+
+## Features Implemented in Mobile
+
+1. **Copilot (Ledger & Commands):**
+   - Quick customer lookup and derived debt balance query (`GET /customers/resolve`, `GET /ledger/customers/{id}/balance`).
+   - Confirmed credit posting (`POST /ledger/credits`).
+   - Confirmed repayment posting (`POST /ledger/repayments`).
+   - Utterance logging and example command chips.
+
+2. **Payment Review (`PaymentReviewScreen`):**
+   - Lists unallocated or ambiguous payments (`GET /payments/review`).
+   - Explicit synthetic mock disclaimer banner.
+   - Merchant-confirmed manual allocation to a verified customer (`POST /payments/{event_id}/allocate`).
+
+3. **Inventory & Stock (`InventoryScreen`):**
+   - Product alias resolution (`GET /products/resolve`) and product catalog creation (`POST /products`).
+   - Derived on-hand quantity and movement count (`GET /inventory/products/{id}/stock`).
+   - Auditable stockout observation recording (`POST /inventory/stockout-observations`) marked clearly as observation only (does not mutate physical stock count).
+   - Confirmed physical count adjustment (`POST /inventory/counts`).
+
+4. **Timeline (`TimelineScreen`):**
+   - Append-only business memory stream from `GET /events?limit=50`.
+   - Audit trail for credit, repayment, count deltas, and payment events.
+
+5. **Business Insights & Facts (`InsightsScreen`):**
+   - Deterministic facts from `GET /insights/facts?persona=kirana|tea_stall|medical_store`.
+   - Evidence IDs mapping and explicit synthetic caveats table.
+   - Observational-only before/after comparisons (no causal claims).
 
 ---
 
