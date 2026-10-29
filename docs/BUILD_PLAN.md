@@ -1,6 +1,6 @@
 # Build Plan
 
-This is the execution checklist from the original growth-insight-only iteration. It is superseded for current scope by the [KiranaOS hackathon PRD](KIRANAOS_HACKATHON_PRD.md) and [48-hour execution plan](HACKATHON_EXECUTION_PLAN.md).
+This is the execution checklist from the original growth-insight-only iteration. It is superseded for current scope by the [KiranaOS hackathon PRD](KIRANAOS_HACKATHON_PRD.md) and [continuous collaboration workflow](CONTINUOUS_COLLABORATION.md).
 
 ## Work sequence
 
