@@ -101,22 +101,22 @@ npm run typecheck
 
 ---
 
-## Environment variables
+## Environment variables & Phone Demo Connection
 
-Copy and fill in values before adding any real API calls (Phase 2+):
+Configure `EXPO_PUBLIC_API_BASE_URL` in `mobile/.env`:
 
 ```bash
-cp ../.env.example .env
+# For local web/emulator testing:
+EXPO_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+
+# For physical phone demo via Expo Go (same Wi-Fi network):
+# Replace with your laptop's Wi-Fi LAN IP (e.g. 192.168.0.102)
+EXPO_PUBLIC_API_BASE_URL=http://192.168.0.102:8000
 ```
 
-The only variable the scaffold reads is:
-
-```
-EXPO_PUBLIC_API_BASE_URL=http://localhost:8000
-```
-
-This is used by `src/api/placeholder.ts`; no network request is made in
-Phase 1 regardless of the value.
+> **FastAPI backend startup:**
+> Run `uvicorn app.main:app --host 0.0.0.0 --port 8000` in `backend/` so that
+> it listens on all network interfaces and accepts connections from the phone on LAN.
 
 ---
 
@@ -129,12 +129,21 @@ mobile/
 ├── assets/                 # Placeholder PNG icons (replace before EAS build)
 ├── src/
 │   ├── api/
+│   │   ├── ledgerClient.ts # Full typed client for backend v0.5 endpoints
 │   │   └── placeholder.ts  # Stub API client
 │   ├── components/
 │   │   └── InfoBanner.tsx  # Reusable banner + synthetic-data pill
 │   ├── features/
-│   │   └── home/
-│   │       └── HomeScreen.tsx  # Main home screen
+│   │   ├── home/
+│   │   │   └── HomeScreen.tsx  # Main hub, copilot & "Aaj kaisa raha?" brief
+│   │   ├── insights/
+│   │   │   └── InsightsScreen.tsx  # Business facts & evidence IDs
+│   │   ├── inventory/
+│   │   │   └── InventoryScreen.tsx # Stock lookup, count & observations
+│   │   ├── paymentReview/
+│   │   │   └── PaymentReviewScreen.tsx # Review queue & manual allocation
+│   │   └── timeline/
+│   │       └── TimelineScreen.tsx  # Append-only activity stream
 │   └── types/
 │       └── index.ts        # Shared TypeScript types
 ├── app.json                # Expo config (SDK 58, no microphone permission)
@@ -148,16 +157,19 @@ mobile/
 
 ---
 
-## What is deliberately NOT here (Phase 1 boundaries)
+## Status and Integrity Boundaries
 
 | Feature | Status |
 |---|---|
-| Microphone / speech permission | ❌ Not requested |
-| Sarvam STT / TTS | ❌ Not included |
-| LLM / AI command parsing | ❌ Not included |
-| Credit / repayment / ledger | ❌ Not included |
-| Payment reconciliation | ❌ Not included |
-| Analytics / business brief | ❌ Not included |
+| Microphone / speech permission | ❌ Not requested (text fallback active) |
+| Sarvam STT / TTS | ❌ Not included (future stretch) |
+| Live Paytm API / processor | ❌ Never claimed (mock UPI intake only) |
+| Customer / Ledger mutations | ✅ Implemented via backend v0.5 |
+| Derived balance | ✅ Computed from posted entries only |
+| Stockout observation | ✅ Preserved as observation (no count mutation) |
+| Physical inventory count | ✅ Explicit count delta confirmation |
+| Business facts ("Aaj kaisa raha?") | ✅ Deterministic facts from synthetic fixture |
+| Merchant actions | ✅ Clearly mocked (never published to real customers) |
 | Backend API calls | ❌ Stub only (`src/api/placeholder.ts`) |
 | SQLite / local DB | ❌ Not included |
 | Audio libraries | ❌ Not installed |

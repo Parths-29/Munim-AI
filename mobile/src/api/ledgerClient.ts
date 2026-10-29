@@ -1,26 +1,11 @@
 /**
  * Comprehensive Typed client for KiranaOS Backend API v0.5
- * Ref: docs/contracts/backend-api-v0.md (origin/codex/payment-review)
+ * Ref: docs/contracts/backend-api-v0.md
  *
- * Implements:
- * - GET  /health
- * - POST /customers
- * - GET  /customers/resolve?query=...
- * - GET  /ledger/customers/{customer_id}/balance
- * - POST /ledger/credits
- * - POST /ledger/repayments
- * - POST /products
- * - GET  /products/resolve?query=...
- * - GET  /inventory/products/{product_id}/stock
- * - POST /inventory/stockout-observations
- * - POST /inventory/counts
- * - GET  /events?limit=50
- * - GET  /insights/facts?persona=...
- * - GET  /payments/review
- * - POST /payments/{event_id}/allocate
- *
- * NOTE: All data is synthetic mock demo data.
- * No live Paytm integration exists or is claimed.
+ * All financial values are integer paise.
+ * Demo shop is fixed to `shop_synth_01`.
+ * All data is strictly synthetic demo data.
+ * No connection to live Paytm systems is claimed.
  */
 
 export const API_BASE_URL =
@@ -310,7 +295,7 @@ export interface InsightFact {
 export interface FactsResponse {
   schema_version: string;
   shop_id: string;
-  data_mode: 'synthetic';
+  data_mode: 'synthetic' | 'merchant_entered' | 'provider_mock';
   period: {
     start: string;
     end: string;
@@ -319,7 +304,7 @@ export interface FactsResponse {
   facts: InsightFact[];
   evidence_ids: string[];
   caveats: string[];
-  allowed_actions: string[];
+  allowed_actions: ('counter_notice' | 'qr_offer_mock' | 'review_payment' | 'confirm_stock_count')[];
 }
 
 export async function fetchInsightFacts(persona: Persona = 'kirana'): Promise<FactsResponse> {
@@ -335,10 +320,12 @@ export interface PaymentReviewItem {
   event_id: string;
   amount_paise: number;
   status: string;
-  payer_token?: string | null;
+  resolution_status: string;
+  reason?: string | null;
   occurred_at: string;
-  source: string;
-  unresolved_reason?: string | null;
+  created_at?: string;
+  payer_token?: string | null;
+  source?: string;
 }
 
 export interface ManualAllocateRequest {
@@ -348,12 +335,12 @@ export interface ManualAllocateRequest {
 }
 
 export interface ManualAllocateResponse {
-  allocation_id: string;
   event_id: string;
   customer_id: string;
   amount_paise: number;
-  decision_status: 'ALLOCATED';
-  ledger_entry_id: string;
+  allocation_entry_id: string;
+  status: 'ALLOCATED';
+  idempotent_replay?: boolean;
 }
 
 export async function fetchPaymentReviewQueue(): Promise<PaymentReviewItem[]> {

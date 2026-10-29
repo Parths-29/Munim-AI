@@ -2,16 +2,18 @@
  * HomeScreen — KiranaOS / Munim-AI Mobile Hub
  *
  * Provides tabbed navigation across:
- * 1. Copilot (Voice/text commands, credit/repayment, customer resolve, derived balance)
+ * 1. Copilot (Voice/text commands, credit/repayment, customer resolve, derived balance,
+ *    and end-to-end "Aaj kaisa raha?" insights brief slice)
  * 2. Pay Review (GET /payments/review & merchant-confirmed manual allocation)
  * 3. Inventory (Stock lookup, stockout observation, physical counts)
  * 4. Timeline (Activity stream from GET /events)
  * 5. Insights (Computed facts, evidence IDs, caveats from GET /insights/facts)
  *
  * Integrity:
- * - Synthetic data only. No live Paytm integration.
+ * - All data is synthetic. No live Paytm integration.
  * - Balance is derived, not LLM-invented.
  * - Stockout is an observation; counts require physical confirmation.
+ * - "Aaj kaisa raha?" loads /insights/facts?persona=kirana with caveats and mocked action.
  */
 
 import React, { useState, useCallback } from 'react';
@@ -34,6 +36,8 @@ import {
   fetchCustomerBalance,
   postCredit,
   postRepayment,
+  fetchInsightFacts,
+  FactsResponse,
 } from '@/api/ledgerClient';
 import PaymentReviewScreen from '@/features/paymentReview/PaymentReviewScreen';
 import InventoryScreen from '@/features/inventory/InventoryScreen';
@@ -46,10 +50,11 @@ interface HistoryEntry {
   id: string;
   text: string;
   timestamp: string;
-  apiResult?: string;
+  isInsightQuery?: boolean;
 }
 
 const EXAMPLE_PROMPTS = [
+  'Aaj kaisa raha?',
   'Raju bhai ka ₹50 udhaar likh do',
   'Raju bhai ka ₹30 jamma kar lo',
   'Raju bhai ka balance batao',
@@ -64,8 +69,28 @@ export default function HomeScreen() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeCustomerId, setActiveCustomerId] = useState<string | null>(null);
-  const [customerName, setCustomerName] = useState('Raju bhai');
+  const [customerName] = useState('Raju bhai');
   const [customerBalance, setCustomerBalance] = useState<number | null>(null);
+
+  // "Aaj kaisa raha?" end-to-end slice state
+  const [insightsBrief, setInsightsBrief] = useState<FactsResponse | null>(null);
+  const [mockOfferApproved, setMockOfferApproved] = useState(false);
+  const [mockOfferText, setMockOfferText] = useState('Special 5% discount on slow-moving packs this weekend');
+
+  // Trigger "Aaj kaisa raha?" insight slice
+  const handleLoadInsightsBrief = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchInsightFacts('kirana');
+      setInsightsBrief(data);
+      setMockOfferApproved(false);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      Alert.alert('Could Not Load Business Brief', `${message}\nEnsure backend is running at ${process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000'}`);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   // Quick Action: Resolve / Check Balance
   const handleCheckRajuBalance = async () => {
@@ -78,7 +103,6 @@ export default function HomeScreen() {
           custId = res.customer.customer_id;
           setActiveCustomerId(custId);
         } else if (res.status === 'NOT_FOUND') {
-          // create demo Raju
           const created = await createCustomer({
             display_name: customerName,
             aliases: ['Raju', 'Raju bhai'],
@@ -184,10 +208,18 @@ export default function HomeScreen() {
     }
   };
 
+  const handlePromptPress = (prompt: string) => {
+    setInput(prompt);
+    if (prompt.toLowerCase().includes('aaj kaisa raha')) {
+      handleLoadInsightsBrief();
+    }
+  };
+
   const handleSubmitText = useCallback(() => {
     const trimmed = input.trim();
     if (!trimmed) return;
 
+    const isInsight = trimmed.toLowerCase().includes('kaisa raha') || trimmed.toLowerCase().includes('summary');
     const entry: HistoryEntry = {
       id: `local-${Date.now()}`,
       text: trimmed,
@@ -195,10 +227,15 @@ export default function HomeScreen() {
         hour: '2-digit',
         minute: '2-digit',
       }),
+      isInsightQuery: isInsight,
     };
     setHistory((prev) => [entry, ...prev]);
     setInput('');
-  }, [input]);
+
+    if (isInsight) {
+      handleLoadInsightsBrief();
+    }
+  }, [input, handleLoadInsightsBrief]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -267,7 +304,132 @@ export default function HomeScreen() {
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
             <SyntheticDataPill />
 
-            <InfoBanner text="Voice STT and live payment processor integration are not connected. Text and mock payment verification are active." />
+            <InfoBanner text="Voice STT and live Paytm servers are not connected. Showing deterministic backend memory & insights." />
+
+            {/* Quick Demo Prompts */}
+            <Text style={styles.sectionLabel}>Tap a demo prompt:</Text>
+            <View style={styles.chipRow}>
+              {EXAMPLE_PROMPTS.map((prompt) => (
+                <TouchableOpacity
+                  key={prompt}
+                  style={[styles.chip, prompt.includes('Aaj kaisa raha') && styles.insightChip]}
+                  onPress={() => handlePromptPress(prompt)}
+                >
+                  {prompt.includes('Aaj kaisa raha') && (
+                    <Ionicons name="sparkles" size={13} color="#ffffff" style={{ marginRight: 4 }} />
+                  )}
+                  <Text style={[styles.chipText, prompt.includes('Aaj kaisa raha') && styles.insightChipText]}>
+                    {prompt}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {loading && <ActivityIndicator size="small" color="#0f3460" style={{ marginVertical: 8 }} />}
+
+            {/* ── End-to-End "Aaj Kaisa Raha?" Brief Card ──────────────── */}
+            {insightsBrief && (
+              <View style={styles.briefCard}>
+                <View style={styles.briefHeader}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Ionicons name="bar-chart" size={18} color="#0f3460" style={{ marginRight: 6 }} />
+                    <Text style={styles.briefTitle}>Business Brief · Kirana Persona</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setInsightsBrief(null)}>
+                    <Ionicons name="close-circle-outline" size={20} color="#6c757d" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Synthetic Warning inside brief */}
+                <View style={styles.briefSyntheticBanner}>
+                  <Text style={styles.briefSyntheticText}>
+                    ⚠ SYNTHETIC DATA — Derived from deterministic test fixture. Not Paytm data.
+                  </Text>
+                </View>
+
+                {/* Comparison Period */}
+                <View style={styles.periodBox}>
+                  <Text style={styles.periodTitle}>Comparison Window:</Text>
+                  <Text style={styles.periodText}>
+                    Active: {insightsBrief.period.start.slice(0, 10)} to {insightsBrief.period.end.slice(0, 10)}
+                  </Text>
+                  <Text style={styles.periodSub}>
+                    Compared against preceding 7-day period (Observational only)
+                  </Text>
+                </View>
+
+                {/* Facts List */}
+                <Text style={styles.factsTitle}>Key Facts (Provenance-Backed):</Text>
+                {insightsBrief.facts.map((fact) => (
+                  <View key={fact.id} style={styles.factRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.factLabel}>{fact.label}</Text>
+                      <Text style={styles.factMeta}>
+                        Source: {fact.source} · ID: {fact.id}
+                      </Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.factValue}>
+                        {typeof fact.value === 'number' && fact.unit === 'INR_paise'
+                          ? `₹${(fact.value / 100).toFixed(2)}`
+                          : `${fact.value} ${fact.unit ?? ''}`}
+                      </Text>
+                      {fact.comparison_value !== undefined && fact.comparison_value !== null && (
+                        <Text style={styles.comparisonText}>
+                          Prev: {fact.comparison_value} {fact.unit ?? ''}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                ))}
+
+                {/* Caveats */}
+                <View style={styles.briefCaveatsBox}>
+                  <Text style={styles.briefCaveatsTitle}>Caveats & Limitations:</Text>
+                  {insightsBrief.caveats.map((c, idx) => (
+                    <Text key={idx} style={styles.briefCaveatItem}>• {c}</Text>
+                  ))}
+                  <Text style={styles.briefCaveatItem}>
+                    • Differences between periods are strictly observational and do not imply causal revenue impact.
+                  </Text>
+                </View>
+
+                {/* Clearly Mocked Offer Action */}
+                <View style={styles.mockActionCard}>
+                  <View style={styles.mockActionHeader}>
+                    <Text style={styles.mockActionTitle}>Proposed Merchant Action (Mock)</Text>
+                    <View style={styles.mockBadge}>
+                      <Text style={styles.mockBadgeText}>MOCK ONLY</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.mockActionDesc}>
+                    Munim suggests an in-store counter notice to boost slow-moving inventory:
+                  </Text>
+                  <TextInput
+                    style={styles.mockActionInput}
+                    value={mockOfferText}
+                    onChangeText={setMockOfferText}
+                  />
+
+                  {mockOfferApproved ? (
+                    <View style={styles.approvedBanner}>
+                      <Ionicons name="checkmark-done-circle" size={18} color="#155724" style={{ marginRight: 6 }} />
+                      <Text style={styles.approvedBannerText}>
+                        Approved by Merchant (Mock only — NOT published to live customers).
+                      </Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.approveBtn}
+                      onPress={() => setMockOfferApproved(true)}
+                    >
+                      <Ionicons name="hand-right-outline" size={16} color="#ffffff" style={{ marginRight: 6 }} />
+                      <Text style={styles.approveBtnText}>Approve Mocked Counter Notice</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
 
             {/* Customer Quick Card */}
             <View style={styles.customerCard}>
@@ -275,7 +437,7 @@ export default function HomeScreen() {
                 <View>
                   <Text style={styles.customerCardTitle}>{customerName}</Text>
                   <Text style={styles.customerCardSub}>
-                    {activeCustomerId ? `ID: ${activeCustomerId}` : 'Not yet resolved in DB'}
+                    {activeCustomerId ? `ID: ${activeCustomerId}` : 'Alias: Raju / Raju bhai'}
                   </Text>
                 </View>
                 {customerBalance !== null && (
@@ -316,22 +478,6 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            {loading && <ActivityIndicator size="small" color="#0f3460" style={{ marginVertical: 8 }} />}
-
-            {/* Quick Prompt Chips */}
-            <Text style={styles.sectionLabel}>Example Demo Commands:</Text>
-            <View style={styles.chipRow}>
-              {EXAMPLE_PROMPTS.map((prompt) => (
-                <TouchableOpacity
-                  key={prompt}
-                  style={styles.chip}
-                  onPress={() => setInput(prompt)}
-                >
-                  <Text style={styles.chipText}>{prompt}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
             {/* Local Command Log */}
             {history.length > 0 && (
               <>
@@ -352,7 +498,7 @@ export default function HomeScreen() {
               style={styles.textInput}
               value={input}
               onChangeText={setInput}
-              placeholder="Type Hindi/English command..."
+              placeholder="Ask 'Aaj kaisa raha?' or type command..."
               placeholderTextColor="#9aa0a6"
               returnKeyType="send"
               onSubmitEditing={handleSubmitText}
@@ -416,6 +562,137 @@ const styles = StyleSheet.create({
   copilotContainer: { flex: 1, backgroundColor: '#f8f9fa' },
   scrollView: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 16 },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6c757d',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#0f3460',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  chipText: { fontSize: 12, color: '#0f3460' },
+  insightChip: {
+    backgroundColor: '#0f3460',
+    borderColor: '#0f3460',
+  },
+  insightChipText: { color: '#ffffff', fontWeight: '700' },
+
+  // ── "Aaj kaisa raha?" Brief Card
+  briefCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#0f3460',
+    elevation: 3,
+  },
+  briefHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  briefTitle: { fontSize: 16, fontWeight: '800', color: '#0f3460' },
+  briefSyntheticBanner: {
+    backgroundColor: '#fff3cd',
+    padding: 8,
+    borderRadius: 6,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#ffc107',
+  },
+  briefSyntheticText: { fontSize: 11, fontWeight: '700', color: '#856404', textAlign: 'center' },
+  periodBox: {
+    backgroundColor: '#e8f0fe',
+    padding: 8,
+    borderRadius: 6,
+    marginBottom: 10,
+  },
+  periodTitle: { fontSize: 11, fontWeight: '700', color: '#0f3460' },
+  periodText: { fontSize: 12, color: '#0f3460', fontFamily: 'monospace', marginTop: 2 },
+  periodSub: { fontSize: 10, color: '#6c757d', fontStyle: 'italic', marginTop: 2 },
+  factsTitle: { fontSize: 12, fontWeight: '700', color: '#495057', marginBottom: 6 },
+  factRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f3f5',
+  },
+  factLabel: { fontSize: 13, fontWeight: '600', color: '#212529' },
+  factMeta: { fontSize: 10, color: '#9aa0a6' },
+  factValue: { fontSize: 15, fontWeight: '800', color: '#0f3460' },
+  comparisonText: { fontSize: 11, color: '#6c757d' },
+  briefCaveatsBox: {
+    backgroundColor: '#f8f9fa',
+    padding: 10,
+    borderRadius: 6,
+    marginTop: 10,
+    marginBottom: 12,
+  },
+  briefCaveatsTitle: { fontSize: 11, fontWeight: '700', color: '#495057', marginBottom: 4 },
+  briefCaveatItem: { fontSize: 11, color: '#6c757d', lineHeight: 15, marginBottom: 2 },
+  mockActionCard: {
+    backgroundColor: '#fbfbfb',
+    borderWidth: 1,
+    borderColor: '#ced4da',
+    borderRadius: 6,
+    padding: 12,
+  },
+  mockActionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  mockActionTitle: { fontSize: 13, fontWeight: '700', color: '#0f3460' },
+  mockBadge: { backgroundColor: '#e2e3e5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  mockBadgeText: { fontSize: 9, fontWeight: '700', color: '#383d41' },
+  mockActionDesc: { fontSize: 11, color: '#6c757d', marginBottom: 6 },
+  mockActionInput: {
+    height: 36,
+    borderWidth: 1,
+    borderColor: '#ced4da',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    fontSize: 12,
+    backgroundColor: '#ffffff',
+    marginBottom: 8,
+  },
+  approveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0f3460',
+    paddingVertical: 8,
+    borderRadius: 4,
+  },
+  approveBtnText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
+  approvedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#d4edda',
+    padding: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#c3e6cb',
+  },
+  approvedBannerText: { fontSize: 11, fontWeight: '700', color: '#155724', flex: 1 },
+
+  // Customer Card
   customerCard: {
     backgroundColor: '#ffffff',
     borderRadius: 8,
@@ -455,24 +732,6 @@ const styles = StyleSheet.create({
   creditBtn: { backgroundColor: '#fff5f5' },
   repayBtn: { backgroundColor: '#eef9f0' },
   quickActionText: { fontSize: 12, fontWeight: '600', color: '#0f3460' },
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#6c757d',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  chip: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#0f3460',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  chipText: { fontSize: 12, color: '#0f3460' },
   historyCard: {
     backgroundColor: '#ffffff',
     borderRadius: 6,

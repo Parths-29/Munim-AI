@@ -70,7 +70,7 @@ export default function PaymentReviewScreen() {
         idempotency_key: `alloc_${selectedEvent.event_id}_${Date.now()}`,
       });
       setActionMessage(
-        `✓ Payment ₹${(res.amount_paise / 100).toFixed(2)} allocated to customer ${res.customer_id}! Ledger Entry: ${res.ledger_entry_id}`
+        `✓ Payment ₹${(res.amount_paise / 100).toFixed(2)} allocated to customer ${res.customer_id}! Allocation Entry: ${res.allocation_entry_id}`
       );
       setSelectedEvent(null);
       setTargetCustomerId('');
@@ -150,9 +150,9 @@ export default function PaymentReviewScreen() {
             <Text style={styles.detailValue}>{item.source}</Text>
           </Text>
 
-          {item.unresolved_reason && (
+          {item.reason && (
             <Text style={styles.reasonText}>
-              Reason: {item.unresolved_reason}
+              Reason: {item.reason}
             </Text>
           )}
 
