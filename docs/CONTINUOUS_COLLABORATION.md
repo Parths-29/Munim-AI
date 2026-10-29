@@ -21,6 +21,7 @@ These decisions are enough to keep moving. Avoid reopening them unless the team 
 - `codex/phase-1-contracts` has the contracts and backend health scaffold.
 - `codex/phase-2-ledger-api` adds customer/alias, credit/repayment, derived-balance, and idempotency work on top.
 - `codex/inventory-timeline` adds confirmed physical stock counts, separate stockout observations, and a read-only append-only activity timeline (latest checkpoint `3b77e9f`).
+- `codex/business-facts` adds the deterministic synthetic facts endpoint, latest checkpoint `ae2d84d`; it is based on `codex/inventory-timeline`.
 - No Antigravity branch was visible on GitHub at the last fetch. Its changes may still be local; Codex cannot inspect or integrate unpushed files.
 
 Next time you resume or ask Codex to check progress, fetch the remote first and inspect branch tips/PRs. Frequent remote commits let both machines fetch the same work. Do not use force-push to overwrite another teammate's branch.
@@ -68,6 +69,6 @@ Use the repository's [PR template](../.github/pull_request_template.md). Each PR
 ## Next independent tasks
 
 - **Antigravity:** finish/push the mobile shell branch; report SHA and PR URL. Keep to `mobile/` and avoid the backend/contracts files.
-- **Codex:** next build the deterministic business-facts endpoint from transaction data, then mock payment intake/review if the demo flow needs it. Do not claim payment reconciliation is complete until evidence rules and replay behavior are implemented.
+- **Codex:** next build mocked payment intake/review if the demo flow needs it. Do not claim payment reconciliation is complete until evidence rules and replay behavior are implemented.
 - **Parth:** choose the actual LLM provider/available credits and keep the request/response behind an adapter; voice can remain mocked until access is verified.
 - **Team:** open and merge the current contract/backend PRs in an order that gives mobile a stable API contract. A single combined bootstrap PR is acceptable if the Phase 1 and Phase 2 branches are still unmerged.
