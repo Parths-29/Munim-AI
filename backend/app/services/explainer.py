@@ -239,7 +239,7 @@ def explain_business_facts(facts_view: BusinessFactsView) -> BriefExplanationRes
         req = urllib.request.Request(
             url, data=data, headers={"Content-Type": "application/json"}, method="POST"
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             resp_body = json.loads(resp.read().decode("utf-8"))
 
         raw_text = resp_body["candidates"][0]["content"]["parts"][0]["text"].strip()
