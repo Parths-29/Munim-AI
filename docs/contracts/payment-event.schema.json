@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://munim-ai.local/schemas/payment-event-1.0.json",
+  "title": "Provider-neutral mocked payment event",
+  "description": "Synthetic hackathon payment event. A payment indicates money movement; it does not prove a specific debt allocation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event_id", "shop_id", "amount_paise", "currency", "status", "occurred_at", "source", "idempotency_key"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "event_id": {"type": "string", "minLength": 1, "maxLength": 120},
+    "shop_id": {"type": "string", "minLength": 1, "maxLength": 100},
+    "amount_paise": {"type": "integer", "minimum": 1},
+    "currency": {"const": "INR"},
+    "status": {"enum": ["SUCCESS", "PENDING", "FAILED", "REVERSED"]},
+    "occurred_at": {"type": "string", "format": "date-time"},
+    "source": {"const": "provider_mock"},
+    "idempotency_key": {"type": "string", "minLength": 8, "maxLength": 150},
+    "payer_token": {"type": ["string", "null"], "maxLength": 100},
+    "reference_token": {"type": ["string", "null"], "maxLength": 120}
+  }
+}

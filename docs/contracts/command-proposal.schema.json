@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://munim-ai.local/schemas/command-proposal-1.0.json",
+  "title": "Munim-AI typed command proposal",
+  "description": "Untrusted AI/parser proposal. The backend validates and authorizes it; it never writes directly from model output.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "command_id", "shop_id", "intent", "status", "source", "confidence", "payload", "requires_merchant_confirmation"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "command_id": {"type": "string", "minLength": 8, "maxLength": 100},
+    "shop_id": {"type": "string", "minLength": 1, "maxLength": 100},
+    "intent": {"enum": ["create_credit", "record_repayment", "get_customer_balance", "report_stockout", "adjust_stock", "get_daily_summary"]},
+    "status": {"enum": ["READY", "NEEDS_CLARIFICATION"]},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channel", "language"],
+      "properties": {
+        "channel": {"enum": ["text", "voice", "mock"]},
+        "language": {"enum": ["hi", "mr", "en", "hinglish", "unknown"]},
+        "transcript_ref": {"type": ["string", "null"], "maxLength": 120}
+      }
+    },
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "customer_ref": {"$ref": "#/$defs/entityReference"},
+        "amount_paise": {"type": "integer", "minimum": 1},
+        "product_ref": {"$ref": "#/$defs/entityReference"},
+        "quantity": {"type": "number", "exclusiveMinimum": 0},
+        "quantity_delta": {"type": "number", "not": {"const": 0}},
+        "unit": {"type": "string", "minLength": 1, "maxLength": 32},
+        "period": {"enum": ["today", "yesterday", "last_7_days", "last_28_days"]}
+      }
+    },
+    "missing_fields": {"type": "array", "uniqueItems": true, "items": {"enum": ["customer_ref", "amount_paise", "product_ref", "quantity", "quantity_delta", "unit", "period"]}},
+    "clarification_question": {"type": ["string", "null"], "maxLength": 240},
+    "requires_merchant_confirmation": {"type": "boolean"}
+  },
+  "$defs": {
+    "entityReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "query": {"type": "string", "minLength": 1, "maxLength": 100},
+        "entity_id": {"type": ["string", "null"], "maxLength": 100}
+      },
+      "anyOf": [{"required": ["query"]}, {"required": ["entity_id"]}]
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "READY"}}, "required": ["status"]},
+      "then": {"properties": {"missing_fields": {"maxItems": 0}, "clarification_question": {"type": "null"}}}
+    },
+    {
+      "if": {"properties": {"status": {"const": "NEEDS_CLARIFICATION"}}, "required": ["status"]},
+      "then": {"required": ["missing_fields", "clarification_question"], "properties": {"missing_fields": {"minItems": 1}, "clarification_question": {"type": "string", "minLength": 1}}}
+    },
+    {
+      "if": {"properties": {"intent": {"enum": ["create_credit", "record_repayment"]}}, "required": ["intent"]},
+      "then": {"if": {"properties": {"status": {"const": "READY"}}, "required": ["status"]}, "then": {"properties": {"payload": {"required": ["customer_ref", "amount_paise"]}}}}
+    },
+    {
+      "if": {"properties": {"intent": {"const": "get_customer_balance"}}, "required": ["intent"]},
+      "then": {"if": {"properties": {"status": {"const": "READY"}}, "required": ["status"]}, "then": {"properties": {"payload": {"required": ["customer_ref"]}}}}
+    },
+    {
+      "if": {"properties": {"intent": {"const": "report_stockout"}}, "required": ["intent"]},
+      "then": {"if": {"properties": {"status": {"const": "READY"}}, "required": ["status"]}, "then": {"properties": {"payload": {"required": ["product_ref"]}}}}
+    },
+    {
+      "if": {"properties": {"intent": {"const": "adjust_stock"}}, "required": ["intent"]},
+      "then": {"if": {"properties": {"status": {"const": "READY"}}, "required": ["status"]}, "then": {"properties": {"payload": {"required": ["product_ref", "quantity_delta", "unit"]}}}}
+    },
+    {
+      "if": {"properties": {"intent": {"const": "get_daily_summary"}}, "required": ["intent"]},
+      "then": {"if": {"properties": {"status": {"const": "READY"}}, "required": ["status"]}, "then": {"properties": {"payload": {"maxProperties": 1}}}}
+    }
+  ]
+}
