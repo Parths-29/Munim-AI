@@ -1,0 +1,20 @@
+# Expo generated
+.expo/
+dist/
+web-build/
+
+# Dependencies
+node_modules/
+
+# Native build artefacts
+android/
+ios/
+
+# Local env overrides
+.env
+.env.local
+
+# OS artefacts
+.DS_Store
+Thumbs.db
+
