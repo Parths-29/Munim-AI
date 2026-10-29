@@ -1,0 +1,21 @@
+{
+  "scenario_version": "1.0",
+  "data_mode": "synthetic",
+  "shop": {"shop_id": "shop_synth_01", "persona": "kirana", "timezone": "Asia/Kolkata"},
+  "customer": {"customer_id": "customer_raju_01", "display_name": "Raju bhai", "payer_token": "payer_synth_raju_01"},
+  "opening_ledger": [
+    {"entry_id": "entry_opening_raju_01", "type": "CREDIT", "amount_paise": 50000, "status": "POSTED"}
+  ],
+  "demo_steps": [
+    {"step": 1, "utterance": "Raju bhai ka 50 rupaye udhaar likh do", "intent": "create_credit", "confirmation_required": true, "amount_paise": 5000, "expected_balance_paise": 55000},
+    {"step": 2, "event_id": "pay_synth_raju_300_01", "amount_paise": 30000, "status": "SUCCESS", "payer_token": "payer_synth_raju_01", "expected_allocation_paise": 30000, "expected_balance_paise": 25000, "replay_same_event_id_expected_new_allocations": 0},
+    {"step": 3, "utterance": "Maggi khatam ho gaya", "intent": "report_stockout", "expected_event": "stockout_observed", "requires_count_confirmation": true, "on_hand_changes_before_count": false},
+    {"step": 4, "utterance": "Aaj kaisa raha", "intent": "get_daily_summary", "expected_data_mode": "synthetic", "action": "counter_notice", "action_state": "mock_approved_not_published"}
+  ],
+  "payment_match_policy": {
+    "auto_match_requires": ["unique_event_id", "successful_status", "unique_shop_scoped_payer_token_mapping", "eligible_positive_outstanding_balance"],
+    "never_allocate_above_outstanding": true,
+    "ambiguous_or_excess_amount": "review_or_leave_excess_unallocated",
+    "duplicate_event_effect": "none"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://munim-ai.local/schemas/facts-1.0.json",
+  "title": "Munim-AI computed facts for reader/explainer",
+  "description": "Backend-computed, provenance-bearing facts. The LLM may explain these facts but must not calculate or add facts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "shop_id", "data_mode", "period", "facts", "evidence_ids", "caveats", "allowed_actions"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "shop_id": {"type": "string", "minLength": 1},
+    "data_mode": {"enum": ["synthetic", "merchant_entered", "provider_mock"]},
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end", "timezone"],
+      "properties": {
+        "start": {"type": "string", "format": "date-time"},
+        "end": {"type": "string", "format": "date-time"},
+        "timezone": {"type": "string", "minLength": 1}
+      }
+    },
+    "facts": {"type": "array", "items": {"$ref": "#/$defs/fact"}},
+    "evidence_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+    "caveats": {"type": "array", "items": {"type": "string", "maxLength": 300}},
+    "allowed_actions": {"type": "array", "uniqueItems": true, "items": {"enum": ["counter_notice", "qr_offer_mock", "review_payment", "confirm_stock_count"]}}
+  },
+  "$defs": {
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "status", "value", "unit", "source", "count"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$"},
+        "label": {"type": "string", "minLength": 1, "maxLength": 100},
+        "status": {"enum": ["available", "unavailable", "needs_confirmation", "low_sample"]},
+        "value": {"type": ["number", "integer", "string", "boolean", "null"]},
+        "unit": {"type": ["string", "null"], "maxLength": 32},
+        "source": {"type": "string", "minLength": 1, "maxLength": 100},
+        "count": {"type": ["integer", "null"], "minimum": 0},
+        "comparison_value": {"type": ["number", "integer", "string", "boolean", "null"]},
+        "comparison_period": {"type": ["string", "null"], "maxLength": 160},
+        "definition": {"type": ["string", "null"], "maxLength": 300},
+        "reason_unavailable": {"type": ["string", "null"], "maxLength": 160}
+      }
+    }
+  }
+}

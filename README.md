@@ -4,7 +4,7 @@
 
 **Munim-AI** is the merchant-facing copilot; **KiranaOS** is the structured memory layer behind it. The hackathon prototype focuses on recording customer credit (udhaar), stock events, and payment events safely, then answering questions and suggesting actions the shopkeeper approves. It targets the **Merchant Growth AI** track of the Paytm Build for India AI Hackathon, Mumbai Edition.
 
-> **Current status:** Product definition and hackathon prototype plan. This repository currently contains planning documents; application code and live Paytm data integration are not established by these documents.
+> **Current status:** Phase 1. The repository has product/contracts documentation and a minimal FastAPI health scaffold. The Expo scaffold and all business workflows are still pending; no live Paytm integration is claimed.
 
 ## The problem we are solving
 
@@ -22,7 +22,7 @@ The event brief supplied by our team describes three tracks:
 2. **AI-Powered Financial Journeys:** simpler and more human customer journeys in insurance, lending, and fintech.
 3. **Autonomous AI Teammates:** agents that understand context, decide, take actions, and work with human teams in sales or customer service.
 
-Munim-AI is scoped to **Track 1**. Its proposed distinction is structured shop memory for udhaar and stock, cautious payment-to-ledger reconciliation, and evidence-linked actions approved by the merchant. Paytm already offers merchant analytics and voice-enabled products; we do not claim to be first. See the current [hackathon PRD](docs/KIRANAOS_HACKATHON_PRD.md) and [48-hour execution plan](docs/HACKATHON_EXECUTION_PLAN.md).
+Munim-AI is scoped to **Track 1**. Its proposed distinction is structured shop memory for udhaar and stock, cautious payment-to-ledger reconciliation, and evidence-linked actions approved by the merchant. Paytm already offers merchant analytics and voice-enabled products; we do not claim to be first. See the current [hackathon PRD](docs/KIRANAOS_HACKATHON_PRD.md) and [continuous team workflow](docs/CONTINUOUS_COLLABORATION.md).
 
 ## The core demo loop
 
@@ -53,7 +53,7 @@ The model ZIP is not committed here. Do not put credentials, real payment export
 - A grounded business insight, evidence panel, and merchant-approved mocked shop-side action.
 - Optional research-risk panel from the existing fraud model only after the core flow works and the bundle is verified.
 
-The larger KiranaOS product vision includes delivery, supplier workflows, offline sync, roles, and procurement. Those are roadmap items, not two-day build commitments. The specific P0 boundaries and five execution phases are in the [execution plan](docs/HACKATHON_EXECUTION_PLAN.md).
+The larger KiranaOS product vision includes delivery, supplier workflows, offline sync, roles, and procurement. Those are roadmap items, not two-day build commitments. The current ownership and continuous build workflow are in [docs/CONTINUOUS_COLLABORATION.md](docs/CONTINUOUS_COLLABORATION.md).
 
 ## Build status and next steps
 
@@ -66,7 +66,7 @@ The larger KiranaOS product vision includes delivery, supplier workflows, offlin
 7. Integrate the fraud model only after a clean run and a clear explanation of its research limitations.
 8. Rehearse a short end-to-end demo with one planted scenario and an honest limitations slide.
 
-For current product requirements, open [docs/KIRANAOS_HACKATHON_PRD.md](docs/KIRANAOS_HACKATHON_PRD.md). For the five-phase schedule and team Git/PR workflow, open [docs/HACKATHON_EXECUTION_PLAN.md](docs/HACKATHON_EXECUTION_PLAN.md). [docs/PRD.md](docs/PRD.md) and [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) preserve the earlier, narrower growth-insight iteration for context; they are superseded for current hackathon scope.
+For current product requirements, open [docs/KIRANAOS_HACKATHON_PRD.md](docs/KIRANAOS_HACKATHON_PRD.md). For continuously coordinated work, branch ownership, and the Git/PR loop, open [docs/CONTINUOUS_COLLABORATION.md](docs/CONTINUOUS_COLLABORATION.md). [docs/PRD.md](docs/PRD.md), [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md), and [docs/HACKATHON_EXECUTION_PLAN.md](docs/HACKATHON_EXECUTION_PLAN.md) preserve earlier iterations and are not the current workflow.
 
 ## Evidence and references
 
