@@ -4,7 +4,7 @@
 
 **Munim-AI** is the merchant-facing copilot; **KiranaOS** is the structured memory layer behind it. The hackathon prototype focuses on recording customer credit (udhaar), stock events, and payment events safely, then answering questions and suggesting actions the shopkeeper approves. It targets the **Merchant Growth AI** track of the Paytm Build for India AI Hackathon, Mumbai Edition.
 
-> **Current status:** Product definition and hackathon prototype plan. This repository currently contains planning documents; application code and live Paytm data integration are not established by these documents.
+> **Current status:** Phase 1. The repository has product/contracts documentation and a minimal FastAPI health scaffold. The Expo scaffold and all business workflows are still pending; no live Paytm integration is claimed.
 
 ## The problem we are solving
 

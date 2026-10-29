@@ -1,6 +1,6 @@
 # Phase 1: Contracts and scaffold
 
-**Phase window:** first 3 hours · **Status:** contracts drafted; scaffold/review still pending.
+**Phase window:** first 3 hours · **Status:** contracts and backend scaffold drafted; mobile scaffold and team review still pending.
 
 ## Decisions proposed for this build
 
@@ -25,9 +25,11 @@
 
 These are draft v1 contracts for team review. If a field changes, update the schema, sample payload, API type, UI types, and demo fixture together in one coordinated PR.
 
-## Scaffold to be built by Antigravity
+## Scaffold status and remaining Antigravity task
 
-Create only the minimum runnable skeleton and keep business workflows for later phases:
+Codex has added `.gitignore`, `.env.example`, `backend/requirements.txt`, `backend/README.md`, and a minimal `backend/app` health route. The health route reports local API liveness only; no domain behavior or database writes are implemented.
+
+Antigravity should create only the minimum runnable mobile skeleton and keep business workflows for later phases:
 
 ```text
 backend/
@@ -49,13 +51,14 @@ docs/
   contracts/
 ```
 
-Required scaffold artifacts: root `.gitignore`, `.env.example` with placeholder names only, backend and mobile start instructions, a minimal backend health route, and a minimal mobile screen that can be launched in Expo Go. No ledger/payment/AI behavior in the scaffold PR. Do not edit `docs/contracts/` or this checklist; those belong to the contract branch.
+Remaining artifacts: `mobile/` app shell and `mobile/README.md` start instructions. Do not install audio libraries or request microphone permission in Phase 1. Do not edit `backend/`, root `.gitignore`, `.env.example`, `docs/contracts/`, or this checklist; those belong to the Codex Phase 1 branch. No ledger/payment/AI behavior in the mobile scaffold PR.
 
 ## Phase 1 exit checklist
 
 - [ ] Team agrees the v1 contracts and corrected Raju repayment seed arithmetic.
 - [ ] All three teammates can clone, branch, push, and open PRs on the GitHub repo.
-- [ ] Scaffold starts on the selected backend environment and Android demo phone.
+- [ ] FastAPI health route starts in the selected backend environment.
+- [ ] Expo shell starts on the Android demo phone.
 - [ ] `.env` and real data are ignored; `.env.example` contains no secrets.
 - [ ] `main` contains the merged contracts and scaffold PRs before Phase 2 work branches.
 - [ ] Team can identify owners for `backend/`, `mobile/`, `docs/contracts/`, and root integration files.
