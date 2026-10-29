@@ -1,4 +1,4 @@
-# Backend API contract v0.3
+# Backend API contract v0.4
 
 This describes the synthetic single-shop backend slice on the current task branch. It supplements the AI proposal schemas; it is not a Paytm API contract.
 
@@ -9,7 +9,7 @@ Base URL for local development: `http://127.0.0.1:8000`. Money is integer paise.
 Returns local liveness only:
 
 ```json
-{"status":"ok","phase":"inventory-timeline","data_mode":"synthetic-only"}
+{"status":"ok","phase":"business-facts","data_mode":"synthetic-only"}
 ```
 
 ## `POST /customers`
@@ -87,6 +87,10 @@ Request fields: `product_id`, non-negative integer `counted_quantity`, `source_e
 
 Returns recent event IDs, event types, related entity, source event/channel/utterance, status, summary, and timestamp. The endpoint is read-only; it does not expose payment-provider credentials or raw customer contact data.
 
-## Explicitly not implemented in v0.3
+## `GET /insights/facts?persona=kirana`
+
+Returns facts in the shape defined by `docs/contracts/facts.schema.json`. Supported personas are `kirana`, `tea_stall`, and `medical_store`. The API seeds a deterministic 90-day synthetic transaction fixture when its local database is empty. The current window is the latest 7 full fixture days and the comparison is the preceding 7 full days. Values are computed in Python from rows; no LLM computes metrics. Raw payer tokens are never included in the response. Collections are UPI-only, lapsed-payer counts are synthetic-token counts, and before/after differences are not causal claims.
+
+## Explicitly not implemented in v0.4
 
 Mocked payment intake and allocation, voice/LLM parsing, business insight facts, action publication, authentication, and production payment integration. Do not build mobile screens that imply these backend behaviors already exist.

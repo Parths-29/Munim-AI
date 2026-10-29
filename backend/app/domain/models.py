@@ -143,3 +143,34 @@ class BusinessEventView(StrictModel):
     status: str
     summary: str
     created_at: datetime
+
+
+class FactView(StrictModel):
+    id: str
+    label: str
+    status: Literal["available", "unavailable", "needs_confirmation", "low_sample"]
+    value: int | float | str | bool | None
+    unit: str | None
+    source: str
+    count: int | None
+    comparison_value: int | float | str | bool | None = None
+    comparison_period: str | None = None
+    definition: str | None = None
+    reason_unavailable: str | None = None
+
+
+class FactPeriod(StrictModel):
+    start: datetime
+    end: datetime
+    timezone: str
+
+
+class BusinessFactsView(StrictModel):
+    schema_version: Literal["1.0"] = "1.0"
+    shop_id: str
+    data_mode: Literal["synthetic", "merchant_entered", "provider_mock"]
+    period: FactPeriod
+    facts: list[FactView]
+    evidence_ids: list[str]
+    caveats: list[str]
+    allowed_actions: list[Literal["counter_notice", "qr_offer_mock", "review_payment", "confirm_stock_count"]]

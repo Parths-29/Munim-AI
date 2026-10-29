@@ -162,6 +162,20 @@ BEFORE DELETE ON business_events
 BEGIN
     SELECT RAISE(ABORT, 'business events are append-only');
 END;
+
+CREATE TABLE IF NOT EXISTS synthetic_transactions (
+    transaction_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    amount_paise INTEGER NOT NULL CHECK (amount_paise > 0),
+    status TEXT NOT NULL CHECK (status IN ('SUCCESS', 'PENDING', 'FAILED', 'REVERSED')),
+    payer_token TEXT,
+    source TEXT NOT NULL CHECK (source = 'synthetic'),
+    UNIQUE (shop_id, transaction_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_synthetic_tx_shop_time
+    ON synthetic_transactions(shop_id, occurred_at);
 """
 
 

@@ -1,6 +1,6 @@
 # Munim-AI backend scaffold
 
-The current backend slice provides a health endpoint, synthetic-shop customer/alias records, an append-only credit/repayment ledger, verified stock counts, stockout observations, and an append-only activity timeline. It does not yet implement voice/LLM commands, payment reconciliation, or live integrations.
+The current backend slice provides a health endpoint, deterministic synthetic merchant facts, synthetic-shop customer/alias records, an append-only credit/repayment ledger, verified stock counts, stockout observations, and an append-only activity timeline. It does not yet implement voice/LLM commands, payment reconciliation, or live integrations.
 
 ## Requirements
 
@@ -39,6 +39,7 @@ The health response confirms only that the local API process is responding. It d
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/health` | Local API liveness and synthetic-only mode. |
+| `GET` | `/insights/facts?persona=kirana` | Deterministic evidence-linked facts for kirana, tea-stall, or medical-store demo data. |
 | `POST` | `/customers` | Add a synthetic customer and aliases after explicit confirmation. |
 | `GET` | `/customers/resolve?query=Raju%20bhai` | Exact alias lookup; returns `RESOLVED`, `AMBIGUOUS`, or `NOT_FOUND`. |
 | `GET` | `/ledger/customers/{customer_id}/balance` | Derive balance from posted ledger entries. |
@@ -65,7 +66,7 @@ Example credit request:
 }
 ```
 
-The SQLite database is created at `backend/data/munim.sqlite3` by default. Override its location with `MUNIM_DB_PATH`. It is ignored by Git and should contain synthetic demo data only.
+The SQLite database is created at `backend/data/munim.sqlite3` by default. On API startup, an empty database receives a repeatable 90-day synthetic payment fixture for three shop personas. Override the database location with `MUNIM_DB_PATH`. It is ignored by Git and should contain synthetic demo data only.
 
 ## Seed the demo customer
 
