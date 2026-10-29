@@ -119,7 +119,7 @@ export default function InventoryScreen() {
       );
       setPhysicalCountInput('');
       const updatedStock = await fetchProductStock(foundProductId);
-      setStockInfo({ ...updatedStock, product_name: stockInfo?.product_name });
+      setStockInfo({ ...updatedStock, product_name: stockInfo?.product_name ?? updatedStock.product_name });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       setErrorMessage(`Count update failed: ${message}`);
