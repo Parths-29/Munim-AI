@@ -1,18 +1,18 @@
 # Munim-AI
 
-**An explainable, voice-first business copilot for small Paytm merchants.**
+**A voice-first shop copilot with a reliable business memory for small Indian retailers.**
 
-Munim-AI turns a merchant's payment history into a small number of understandable business signals and a merchant-approved next step. The prototype is designed for the **Merchant Growth AI** track of the Paytm Build for India AI Hackathon, Mumbai Edition.
+**Munim-AI** is the merchant-facing copilot; **KiranaOS** is the structured memory layer behind it. The hackathon prototype focuses on recording customer credit (udhaar), stock events, and payment events safely, then answering questions and suggesting actions the shopkeeper approves. It targets the **Merchant Growth AI** track of the Paytm Build for India AI Hackathon, Mumbai Edition.
 
-> **Current status:** Product definition and hackathon prototype plan. This repository was empty when documentation work began. The PRD is the source of truth for scope; code, integration, and live Paytm data access are not yet established by these documents.
+> **Current status:** Product definition and hackathon prototype plan. This repository currently contains planning documents; application code and live Paytm data integration are not established by these documents.
 
 ## The problem we are solving
 
-Small shop owners receive digital payments and can inspect transaction history, but a list of payments still leaves practical questions unanswered: Was today unusually slow? Which time window changed? Is the average sale shrinking? What is one low-risk thing I can try tomorrow? A chart may show a change without helping a busy merchant understand the evidence or choose an action.
+Shop information is split across notebooks, memory, conversations, inventory checks, and payment apps. UPI history can show that money arrived; it cannot by itself tell the shop's credit balance, stock on hand, or which debt a payment should settle. Manually keeping those records connected takes effort and mistakes can affect real balances.
 
-**Problem statement:** Given an authorized merchant's payment history, how might we help a small merchant notice a meaningful change, understand why the system noticed it, and choose a practical next step in their own language—without pretending to know facts the payment data cannot show?
+**Problem statement:** How might we help a small shopkeeper speak everyday business events into a reliable, searchable record, safely connect payments to shop records when evidence is strong, and understand what needs attention—without guessing when the information is ambiguous?
 
-Munim-AI is not a payment processor, credit decision system, or fraud-blocking product. It is a prototype business copilot. It does not claim access to Paytm systems or real merchant data.
+Munim-AI is not a payment processor, credit decision system, or fraud-blocking product. The hackathon demo uses synthetic data and mocked payment events; it does not claim access to Paytm systems or real merchant data.
 
 ## What the hackathon asks builders to explore
 
@@ -22,35 +22,38 @@ The event brief supplied by our team describes three tracks:
 2. **AI-Powered Financial Journeys:** simpler and more human customer journeys in insurance, lending, and fintech.
 3. **Autonomous AI Teammates:** agents that understand context, decide, take actions, and work with human teams in sales or customer service.
 
-Munim-AI is scoped to **Track 1**. It may demonstrate a human-approved action, but we are not changing tracks or claiming autonomous financial actions. See [the PRD](docs/PRD.md) for track fit, scope, evidence, architecture, safety limits, and the build plan.
+Munim-AI is scoped to **Track 1**. Its proposed distinction is structured shop memory for udhaar and stock, cautious payment-to-ledger reconciliation, and evidence-linked actions approved by the merchant. Paytm already offers merchant analytics and voice-enabled products; we do not claim to be first. See the current [hackathon PRD](docs/KIRANAOS_HACKATHON_PRD.md) and [48-hour execution plan](docs/HACKATHON_EXECUTION_PLAN.md).
 
 ## The core demo loop
 
-1. The merchant asks “How was business?” or opens a morning brief.
-2. Deterministic Python analytics compare a chosen period with a comparable prior period.
-3. The assistant explains only computed facts and shows a “Why am I seeing this?” panel.
-4. The merchant reviews and approves a shop-side action, such as a counter notice or QR-linked offer. Publishing is labelled as a mock in the hackathon prototype.
-5. The dashboard compares sales during the offer window with a prior comparable window. It describes an observed comparison, not proof that the offer caused a change.
+1. The merchant asks a question or speaks a business event, such as “Raju bhai ka ₹50 udhaar likh do.”
+2. AI returns a typed proposal; the backend checks it and asks for confirmation when needed.
+3. Validated events are appended to the ledger or stock history. Balances are computed from entries, not invented by the LLM.
+4. A mocked UPI event is linked to a debt only when evidence is strong; otherwise it goes to a review queue.
+5. For “How was business?”, deterministic analytics create facts; the assistant explains them with evidence and proposes an editable, merchant-approved shop-side action.
+6. A later comparison shows what happened during the action window, without claiming the action caused the result.
 
-The LLM is an explanation and language layer; it is not the source of transaction metrics. A validator checks every displayed numerical claim against the analytics facts. Low-confidence voice input must be confirmed rather than silently saved.
+The LLM does not write to the database directly or calculate financial values. Ledger entries are append-only; corrections are linked adjustments. Ambiguous names, amounts, or payment matches trigger clarification or human review. Pending and failed actions remain visibly pending or failed.
 
 ## What we have
 
-- A locked product concept and a three-person team: Parth (LLM, voice, guardrails), Priyanshu (data generation, analytics, optional anomaly-model integration), and Rachit (UI, deck, demo).
+- A product concept and a three-person team: Parth (LLM, voice, guardrails), Priyanshu (data generation, analytics, optional anomaly-model integration), and Rachit (mobile UI, deck, demo).
 - A ZIP called `munim_inference_bundle.zip` supplied separately from this repository. It contains a FastAPI inference service and model artifacts for a single-transaction hybrid fraud/anomaly research score. It has not yet been independently run from this repository.
 - A README for the original UPI fraud project describing a multi-source dataset and offline research pipeline. The dataset is heterogeneous and includes synthetic mobile-money data; its metrics are not Paytm-specific validation.
 - A hackathon event brief supplied in the conversation. Exact API access, judging rubric, Sarvam API credentials/model, and official event rules still need confirmation from organizer materials.
 
 The model ZIP is not committed here. Do not put credentials, real payment exports, or personally identifying data into the repository. See the PRD for how the research model may be presented honestly.
 
-## Planned prototype
+## Hackathon prototype scope
 
-- A clearly labelled synthetic dataset for three merchant personas: kirana, tea stall, and medical store.
-- A deterministic analytics engine for revenue change, hourly patterns, average-ticket drift, recorded payment failures, and lapsed repeat-payer counts only when stable pseudonymous payer IDs exist.
-- A voice/text question flow, with a text fallback if speech services are unavailable.
-- Structured LLM output grounded in analytics facts, with validation and source evidence.
-- A human-approved, mocked shop-side offer and a careful before/after comparison.
-- Optional research-risk panel based on the existing fraud model, only if it can be integrated and demonstrated reliably. It is not part of the core acceptance criteria.
+- Voice/text commands for credit, repayment, customer balance, stockout observation, stock adjustment, and daily summary.
+- A structured, append-only business event history with source utterance and action status.
+- Synthetic data for kirana, tea stall, and medical store personas.
+- A mocked UPI event with safe reconciliation and an unmatched-payment review path.
+- A grounded business insight, evidence panel, and merchant-approved mocked shop-side action.
+- Optional research-risk panel from the existing fraud model only after the core flow works and the bundle is verified.
+
+The larger KiranaOS product vision includes delivery, supplier workflows, offline sync, roles, and procurement. Those are roadmap items, not two-day build commitments. The specific P0 boundaries and five execution phases are in the [execution plan](docs/HACKATHON_EXECUTION_PLAN.md).
 
 ## Build status and next steps
 
@@ -63,7 +66,7 @@ The model ZIP is not committed here. Do not put credentials, real payment export
 7. Integrate the fraud model only after a clean run and a clear explanation of its research limitations.
 8. Rehearse a short end-to-end demo with one planted scenario and an honest limitations slide.
 
-For detail, open [docs/PRD.md](docs/PRD.md) and [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md).
+For current product requirements, open [docs/KIRANAOS_HACKATHON_PRD.md](docs/KIRANAOS_HACKATHON_PRD.md). For the five-phase schedule and team Git/PR workflow, open [docs/HACKATHON_EXECUTION_PLAN.md](docs/HACKATHON_EXECUTION_PLAN.md). [docs/PRD.md](docs/PRD.md) and [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) preserve the earlier, narrower growth-insight iteration for context; they are superseded for current hackathon scope.
 
 ## Evidence and references
 

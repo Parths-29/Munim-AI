@@ -1,5 +1,7 @@
 # Munim-AI Product Requirements Document (Hackathon Prototype)
 
+> **Superseded scope note (29 Oct 2026):** This is the initial payment-insights-only iteration. The team has since selected a broader shop-memory direction: Munim-AI on the customer side, with KiranaOS as its ledger/memory layer. For current product scope use [KIRANAOS_HACKATHON_PRD.md](KIRANAOS_HACKATHON_PRD.md); for the two-day build and collaboration plan use [HACKATHON_EXECUTION_PLAN.md](HACKATHON_EXECUTION_PLAN.md). Keep this file only as decision history; do not implement its earlier scope independently.
+
 **Version:** 0.1 · **Prepared:** 29 October 2026 · **Team:** Code Apex · **Target track:** Merchant Growth AI  
 **Status:** Scope baseline for a two-day build. This PRD records a proposed prototype; it does not assert that code, live integrations, or production validation already exist.
 
