@@ -11,9 +11,10 @@
  *
  * Integrity:
  * - All data is synthetic. No live Paytm integration.
- * - Balance is derived, not LLM-invented.
- * - Stockout is an observation; counts require physical confirmation.
- * - "Aaj kaisa raha?" loads /insights/facts?persona=kirana with caveats and mocked action.
+ * - Customer resolution reads matches[] array.
+ * - Balance is derived from posted entries only (entry_count).
+ * - "Aaj kaisa raha?" renders facts in ₹ / %, formats comparison value accurately,
+ *   and proposes a generic counter notice (no unsupported inventory/footfall claims).
  */
 
 import React, { useState, useCallback } from 'react';
@@ -39,6 +40,7 @@ import {
   fetchInsightFacts,
   FactsResponse,
 } from '@/api/ledgerClient';
+import { formatFactValue, formatComparisonValue } from '@/utils/formatters';
 import PaymentReviewScreen from '@/features/paymentReview/PaymentReviewScreen';
 import InventoryScreen from '@/features/inventory/InventoryScreen';
 import TimelineScreen from '@/features/timeline/TimelineScreen';
@@ -75,7 +77,7 @@ export default function HomeScreen() {
   // "Aaj kaisa raha?" end-to-end slice state
   const [insightsBrief, setInsightsBrief] = useState<FactsResponse | null>(null);
   const [mockOfferApproved, setMockOfferApproved] = useState(false);
-  const [mockOfferText, setMockOfferText] = useState('Special 5% discount on slow-moving packs this weekend');
+  const [mockOfferText, setMockOfferText] = useState('Counter Notice: Pay with UPI at counter for quick checkout on all orders.');
 
   // Trigger "Aaj kaisa raha?" insight slice
   const handleLoadInsightsBrief = useCallback(async () => {
@@ -86,7 +88,10 @@ export default function HomeScreen() {
       setMockOfferApproved(false);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      Alert.alert('Could Not Load Business Brief', `${message}\nEnsure backend is running at ${process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000'}`);
+      Alert.alert(
+        'Could Not Load Business Brief',
+        `${message}\nEnsure backend is running at ${process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000'}`
+      );
     } finally {
       setLoading(false);
     }
@@ -98,9 +103,11 @@ export default function HomeScreen() {
     try {
       let custId = activeCustomerId;
       if (!custId) {
+        // Correctly read matches[] array from CustomerResolution
         const res = await resolveCustomer(customerName);
-        if (res.status === 'RESOLVED' && res.customer) {
-          custId = res.customer.customer_id;
+        if (res.status === 'RESOLVED' && res.matches && res.matches.length > 0) {
+          const matchedCustomer = res.matches[0];
+          custId = matchedCustomer.customer_id;
           setActiveCustomerId(custId);
         } else if (res.status === 'NOT_FOUND') {
           const created = await createCustomer({
@@ -120,7 +127,7 @@ export default function HomeScreen() {
       setCustomerBalance(bal.balance_due_paise);
       Alert.alert(
         'Derived Customer Balance',
-        `${customerName} (ID: ${custId})\nOutstanding: ₹${(bal.balance_due_paise / 100).toFixed(2)}\nEntries: ${bal.posted_entries_count}`
+        `${bal.display_name ?? customerName} (ID: ${custId})\nOutstanding: ₹${(bal.balance_due_paise / 100).toFixed(2)}\nPosted Entries: ${bal.entry_count}`
       );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -137,8 +144,8 @@ export default function HomeScreen() {
       let custId = activeCustomerId;
       if (!custId) {
         const res = await resolveCustomer(customerName);
-        if (res.status === 'RESOLVED' && res.customer) {
-          custId = res.customer.customer_id;
+        if (res.status === 'RESOLVED' && res.matches && res.matches.length > 0) {
+          custId = res.matches[0].customer_id;
           setActiveCustomerId(custId);
         } else {
           const created = await createCustomer({
@@ -179,8 +186,8 @@ export default function HomeScreen() {
       let custId = activeCustomerId;
       if (!custId) {
         const res = await resolveCustomer(customerName);
-        if (res.status === 'RESOLVED' && res.customer) {
-          custId = res.customer.customer_id;
+        if (res.status === 'RESOLVED' && res.matches && res.matches.length > 0) {
+          custId = res.matches[0].customer_id;
           setActiveCustomerId(custId);
         } else {
           Alert.alert('Customer Not Found', 'Resolve customer first.');
@@ -360,28 +367,27 @@ export default function HomeScreen() {
 
                 {/* Facts List */}
                 <Text style={styles.factsTitle}>Key Facts (Provenance-Backed):</Text>
-                {insightsBrief.facts.map((fact) => (
-                  <View key={fact.id} style={styles.factRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.factLabel}>{fact.label}</Text>
-                      <Text style={styles.factMeta}>
-                        Source: {fact.source} · ID: {fact.id}
-                      </Text>
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={styles.factValue}>
-                        {typeof fact.value === 'number' && fact.unit === 'INR_paise'
-                          ? `₹${(fact.value / 100).toFixed(2)}`
-                          : `${fact.value} ${fact.unit ?? ''}`}
-                      </Text>
-                      {fact.comparison_value !== undefined && fact.comparison_value !== null && (
-                        <Text style={styles.comparisonText}>
-                          Prev: {fact.comparison_value} {fact.unit ?? ''}
+                {insightsBrief.facts.map((fact) => {
+                  const formattedVal = formatFactValue(fact);
+                  const formattedComp = formatComparisonValue(fact);
+
+                  return (
+                    <View key={fact.id} style={styles.factRow}>
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <Text style={styles.factLabel}>{fact.label}</Text>
+                        <Text style={styles.factMeta}>
+                          Source: {fact.source} · ID: {fact.id}
                         </Text>
-                      )}
+                      </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={styles.factValue}>{formattedVal}</Text>
+                        {formattedComp && (
+                          <Text style={styles.comparisonText}>{formattedComp}</Text>
+                        )}
+                      </View>
                     </View>
-                  </View>
-                ))}
+                  );
+                })}
 
                 {/* Caveats */}
                 <View style={styles.briefCaveatsBox}>
@@ -397,13 +403,13 @@ export default function HomeScreen() {
                 {/* Clearly Mocked Offer Action */}
                 <View style={styles.mockActionCard}>
                   <View style={styles.mockActionHeader}>
-                    <Text style={styles.mockActionTitle}>Proposed Merchant Action (Mock)</Text>
+                    <Text style={styles.mockActionTitle}>Proposed Merchant Counter Notice (Mock)</Text>
                     <View style={styles.mockBadge}>
                       <Text style={styles.mockBadgeText}>MOCK ONLY</Text>
                     </View>
                   </View>
                   <Text style={styles.mockActionDesc}>
-                    Munim suggests an in-store counter notice to boost slow-moving inventory:
+                    Generic in-store notice based only on available payment options (no inventory or footfall claims):
                   </Text>
                   <TextInput
                     style={styles.mockActionInput}

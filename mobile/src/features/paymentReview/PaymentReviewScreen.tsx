@@ -141,13 +141,15 @@ export default function PaymentReviewScreen() {
           </Text>
 
           <Text style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Payer Token: </Text>
-            <Text style={styles.detailValue}>{item.payer_token ?? '(None / Unmapped)'}</Text>
+            <Text style={styles.detailLabel}>Resolution Status: </Text>
+            <Text style={styles.detailValue}>{item.resolution_status}</Text>
           </Text>
 
           <Text style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Source: </Text>
-            <Text style={styles.detailValue}>{item.source}</Text>
+            <Text style={styles.detailLabel}>Occurred At: </Text>
+            <Text style={styles.detailValue}>
+              {new Date(item.occurred_at).toLocaleString('en-IN')}
+            </Text>
           </Text>
 
           {item.reason && (

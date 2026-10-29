@@ -1,8 +1,8 @@
 /**
  * Comprehensive Typed client for KiranaOS Backend API v0.5
- * Ref: docs/contracts/backend-api-v0.md
+ * Ref: docs/contracts/backend-api-v0.md & backend/app/domain/models.py
  *
- * All financial values are integer paise.
+ * All financial values are integer paise in ledger/payments, or INR float in facts.
  * Demo shop is fixed to `shop_synth_01`.
  * All data is strictly synthetic demo data.
  * No connection to live Paytm systems is claimed.
@@ -40,6 +40,8 @@ export interface CreateCustomerRequest {
   aliases: string[];
   confirmed: boolean;
   idempotency_key: string;
+  source_utterance?: string;
+  source_channel?: 'text' | 'voice' | 'provider_mock' | 'system';
 }
 
 export type CustomerResolveStatus = 'RESOLVED' | 'AMBIGUOUS' | 'NOT_FOUND';
@@ -47,8 +49,7 @@ export type CustomerResolveStatus = 'RESOLVED' | 'AMBIGUOUS' | 'NOT_FOUND';
 export interface CustomerResolveResponse {
   status: CustomerResolveStatus;
   query: string;
-  customer?: Customer;
-  matches?: Customer[];
+  matches: Customer[];
 }
 
 export async function resolveCustomer(query: string): Promise<CustomerResolveResponse> {
@@ -75,9 +76,10 @@ export async function createCustomer(req: CreateCustomerRequest): Promise<Custom
 // ---------------------------------------------------------------------------
 export interface CustomerBalanceResponse {
   customer_id: string;
+  display_name: string;
   balance_due_paise: number;
-  currency: 'INR';
-  posted_entries_count: number;
+  currency: string;
+  entry_count: number;
 }
 
 export interface LedgerEntryRequest {
@@ -86,16 +88,17 @@ export interface LedgerEntryRequest {
   source_event_id: string;
   idempotency_key: string;
   confirmed: boolean;
+  source_utterance?: string;
+  source_channel?: 'text' | 'voice' | 'provider_mock' | 'system';
 }
 
 export interface LedgerEntryResponse {
   entry_id: string;
-  shop_id: string;
   customer_id: string;
-  type: 'CREDIT' | 'REPAYMENT';
+  entry_type: string;
   amount_paise: number;
+  status: string;
   source_event_id: string;
-  status: 'POSTED';
   created_at: string;
   idempotent_replay?: boolean;
 }
@@ -149,19 +152,18 @@ export interface CreateProductRequest {
   confirmed: boolean;
   idempotency_key: string;
   source_utterance?: string;
-  source_channel?: string;
+  source_channel?: 'text' | 'voice' | 'provider_mock' | 'system';
 }
 
 export interface ProductResolveResponse {
   status: 'RESOLVED' | 'AMBIGUOUS' | 'NOT_FOUND';
   query: string;
-  product?: Product;
-  matches?: Product[];
+  matches: Product[];
 }
 
 export interface ProductStockResponse {
   product_id: string;
-  product_name?: string;
+  product_name: string;
   on_hand_quantity: number;
   unit: string;
   movement_count: number;
@@ -173,14 +175,16 @@ export interface StockoutObservationRequest {
   idempotency_key: string;
   confirmed: boolean;
   source_utterance?: string;
-  source_channel?: string;
+  source_channel?: 'text' | 'voice' | 'provider_mock' | 'system';
 }
 
 export interface StockoutObservationResponse {
   observation_id: string;
   product_id: string;
-  status: 'OBSERVED';
-  note: string;
+  status: string;
+  source_event_id: string;
+  created_at: string;
+  idempotent_replay?: boolean;
 }
 
 export interface PhysicalCountRequest {
@@ -190,16 +194,20 @@ export interface PhysicalCountRequest {
   idempotency_key: string;
   confirmed: boolean;
   source_utterance?: string;
-  source_channel?: string;
+  source_channel?: 'text' | 'voice' | 'provider_mock' | 'system';
 }
 
 export interface PhysicalCountResponse {
   movement_id: string;
   product_id: string;
-  previous_quantity: number;
-  counted_quantity: number;
   quantity_delta: number;
-  type: 'PHYSICAL_COUNT';
+  counted_quantity: number;
+  unit: string;
+  reason: string;
+  status: string;
+  source_event_id: string;
+  created_at: string;
+  idempotent_replay?: boolean;
 }
 
 export async function createProduct(req: CreateProductRequest): Promise<Product> {
@@ -259,8 +267,10 @@ export async function recordPhysicalCount(req: PhysicalCountRequest): Promise<Ph
 export interface TimelineEvent {
   event_id: string;
   event_type: string;
-  related_entity_id?: string | null;
-  source_channel?: string | null;
+  entity_type?: string;
+  entity_id?: string;
+  source_event_id?: string;
+  source_channel?: string;
   source_utterance?: string | null;
   status: string;
   summary: string;
@@ -321,11 +331,9 @@ export interface PaymentReviewItem {
   amount_paise: number;
   status: string;
   resolution_status: string;
-  reason?: string | null;
+  reason: string | null;
   occurred_at: string;
-  created_at?: string;
-  payer_token?: string | null;
-  source?: string;
+  created_at: string;
 }
 
 export interface ManualAllocateRequest {
@@ -340,7 +348,7 @@ export interface ManualAllocateResponse {
   amount_paise: number;
   allocation_entry_id: string;
   status: 'ALLOCATED';
-  idempotent_replay?: boolean;
+  idempotent_replay: boolean;
 }
 
 export async function fetchPaymentReviewQueue(): Promise<PaymentReviewItem[]> {

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchInsightFacts, Persona, FactsResponse } from '@/api/ledgerClient';
+import { formatFactValue, formatComparisonValue } from '@/utils/formatters';
 import { SyntheticDataPill } from '@/components/InfoBanner';
 
 const PERSONAS: { key: Persona; label: string }[] = [
@@ -99,38 +100,35 @@ export default function InsightsScreen() {
 
           {/* Computed Facts Table */}
           <Text style={styles.sectionHeader}>Computed Provenance-Bearing Facts:</Text>
-          {factsData.facts.map((fact) => (
-            <View key={fact.id} style={styles.factCard}>
-              <View style={styles.factHeader}>
-                <Text style={styles.factLabel}>{fact.label}</Text>
-                <View style={styles.factStatus}>
-                  <Text style={styles.factStatusText}>{fact.status}</Text>
+          {factsData.facts.map((fact) => {
+            const formattedVal = formatFactValue(fact);
+            const formattedComp = formatComparisonValue(fact);
+
+            return (
+              <View key={fact.id} style={styles.factCard}>
+                <View style={styles.factHeader}>
+                  <Text style={styles.factLabel}>{fact.label}</Text>
+                  <View style={styles.factStatus}>
+                    <Text style={styles.factStatusText}>{fact.status}</Text>
+                  </View>
                 </View>
-              </View>
 
-              <Text style={styles.factValue}>
-                {fact.value !== null && fact.value !== undefined
-                  ? typeof fact.value === 'number' && fact.unit === 'INR_paise'
-                    ? `₹${(fact.value / 100).toFixed(2)}`
-                    : `${fact.value} ${fact.unit ?? ''}`
-                  : '(Unavailable)'}
-              </Text>
+                <Text style={styles.factValue}>{formattedVal}</Text>
 
-              {fact.comparison_value !== undefined && fact.comparison_value !== null && (
-                <Text style={styles.comparisonRow}>
-                  Previous period: {fact.comparison_value} {fact.unit ?? ''} ({fact.comparison_period ?? 'prior window'})
+                {formattedComp && (
+                  <Text style={styles.comparisonRow}>{formattedComp}</Text>
+                )}
+
+                <Text style={styles.factMeta}>
+                  Source: {fact.source} · Fact ID: {fact.id}
                 </Text>
-              )}
 
-              <Text style={styles.factMeta}>
-                Source: {fact.source} · Fact ID: {fact.id}
-              </Text>
-
-              {fact.reason_unavailable && (
-                <Text style={styles.unavailText}>Reason: {fact.reason_unavailable}</Text>
-              )}
-            </View>
-          ))}
+                {fact.reason_unavailable && (
+                  <Text style={styles.unavailText}>Reason: {fact.reason_unavailable}</Text>
+                )}
+              </View>
+            );
+          })}
 
           {/* Evidence IDs */}
           <Text style={styles.sectionHeader}>Evidence IDs Used:</Text>

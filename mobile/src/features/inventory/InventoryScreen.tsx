@@ -45,11 +45,12 @@ export default function InventoryScreen() {
     setStatusMessage(null);
     try {
       const res = await resolveProduct(searchQuery.trim());
-      if (res.status === 'RESOLVED' && res.product) {
-        setFoundProductId(res.product.product_id);
-        const stock = await fetchProductStock(res.product.product_id);
-        setStockInfo({ ...stock, product_name: res.product.name });
-        setStatusMessage(`Resolved: ${res.product.name} (Unit: ${res.product.unit})`);
+      if (res.status === 'RESOLVED' && res.matches && res.matches.length > 0) {
+        const prod = res.matches[0];
+        setFoundProductId(prod.product_id);
+        const stock = await fetchProductStock(prod.product_id);
+        setStockInfo(stock);
+        setStatusMessage(`Resolved: ${prod.name} (Unit: ${prod.unit})`);
       } else if (res.status === 'AMBIGUOUS') {
         setErrorMessage(`Multiple products matched "${searchQuery}". Please specify an exact name.`);
         setStockInfo(null);
@@ -113,11 +114,11 @@ export default function InventoryScreen() {
         source_channel: 'text',
       });
       setStatusMessage(
-        `✓ Physical count updated! Previous: ${res.previous_quantity}, Counted: ${res.counted_quantity}, Delta: ${res.quantity_delta}`
+        `✓ Physical count updated! Counted: ${res.counted_quantity}, Delta: ${res.quantity_delta}`
       );
       setPhysicalCountInput('');
       const updatedStock = await fetchProductStock(foundProductId);
-      setStockInfo({ ...updatedStock, product_name: stockInfo?.product_name });
+      setStockInfo(updatedStock);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       setErrorMessage(`Count update failed: ${message}`);
@@ -154,7 +155,7 @@ export default function InventoryScreen() {
       setNewProductName('');
       setNewProductAliases('');
       const stock = await fetchProductStock(res.product_id);
-      setStockInfo({ ...stock, product_name: res.name });
+      setStockInfo(stock);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       setErrorMessage(`Product creation failed: ${message}`);
