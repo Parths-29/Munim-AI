@@ -17,7 +17,8 @@
    - Utterance logging and example command chips.
 
 2. **Payment Review (`PaymentReviewScreen`):**
-   - Lists unallocated or ambiguous payments (`GET /payments/review`).
+   - Lists unmatched or review-required successful mock payments (`GET /payments/review`).
+   - Can add a clearly labelled synthetic ₹300 payment to populate the review queue (`POST /payments/intake`).
    - Explicit synthetic mock disclaimer banner.
    - Merchant-confirmed manual allocation to a verified customer (`POST /payments/{event_id}/allocate`).
 
@@ -105,6 +106,10 @@ npm run typecheck
 
 Configure `EXPO_PUBLIC_API_BASE_URL` in `mobile/.env`:
 
+Start by copying `mobile/.env.example` to `mobile/.env`, then replace the
+example LAN address with the laptop's current Wi-Fi address. `mobile/.env` is
+ignored by Git and must not contain credentials.
+
 ```bash
 # For local web/emulator testing:
 EXPO_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
@@ -147,6 +152,7 @@ mobile/
 │   └── types/
 │       └── index.ts        # Shared TypeScript types
 ├── app.json                # Expo config (SDK 58, no microphone permission)
+├── .env.example            # Safe LAN URL template for Expo Go
 ├── babel.config.js
 ├── expo-env.d.ts
 ├── metro.config.js
@@ -170,7 +176,7 @@ mobile/
 | Physical inventory count | ✅ Explicit count delta confirmation |
 | Business facts ("Aaj kaisa raha?") | ✅ Deterministic facts from synthetic fixture |
 | Merchant actions | ✅ Clearly mocked (never published to real customers) |
-| Backend API calls | ❌ Stub only (`src/api/placeholder.ts`) |
+| Backend API calls | ✅ Typed client and screens use the synthetic FastAPI endpoints; `placeholder.ts` is unused legacy scaffold code. |
 | SQLite / local DB | ❌ Not included |
 | Audio libraries | ❌ Not installed |
 | Real merchant data | ❌ Never commit |
@@ -192,12 +198,12 @@ mobile/
 
 ---
 
-## Connecting to the backend (Phase 2)
+## Backend setup for the demo
 
-Set `EXPO_PUBLIC_API_BASE_URL` in `.env` to the FastAPI address (e.g.
-`http://192.168.1.42:8000` for LAN) and implement the fetch call in
-`src/api/placeholder.ts`. The backend health route is already live at
-`GET /health` (see `backend/README.md`).
+Set `EXPO_PUBLIC_API_BASE_URL` in `mobile/.env` to the reachable FastAPI address.
+The mobile app uses `src/api/ledgerClient.ts`; `src/api/placeholder.ts` is not
+used by the current screens. Start and seed the synthetic backend as described
+in `backend/README.md` before opening the app.
 
 ---
 

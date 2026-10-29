@@ -12,7 +12,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import {
   fetchPaymentReviewQueue,
+  intakeMockPayment,
   allocatePaymentManually,
+  resolveCustomer,
   PaymentReviewItem,
 } from '@/api/ledgerClient';
 import { SyntheticDataPill } from '@/components/InfoBanner';
@@ -43,6 +45,30 @@ export default function PaymentReviewScreen() {
     }
   }, []);
 
+  const handleCreateDemoPayment = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const now = Date.now();
+      await intakeMockPayment({
+        event_id: `pay_synth_demo_${now}`,
+        amount_paise: 30000,
+        status: 'SUCCESS',
+        occurred_at: new Date().toISOString(),
+        idempotency_key: `cmd_mock_payment_${now}`,
+        payer_token: null,
+        source: 'provider_mock',
+      });
+      setActionMessage('Synthetic ₹300 payment added to review. This is demo data, not a real UPI payment.');
+      await loadReviewQueue();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(`Could not add synthetic payment: ${message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadReviewQueue();
   }, [loadReviewQueue]);
@@ -50,7 +76,7 @@ export default function PaymentReviewScreen() {
   const handleManualAllocate = async () => {
     if (!selectedEvent) return;
     if (!targetCustomerId.trim()) {
-      Alert.alert('Customer Required', 'Please enter a target Customer ID to allocate this payment.');
+      Alert.alert('Customer Required', 'Enter the exact customer name or customer ID to allocate this payment.');
       return;
     }
     if (!confirmed) {
@@ -64,8 +90,19 @@ export default function PaymentReviewScreen() {
     setSubmitting(true);
     setActionMessage(null);
     try {
+      let customerId = targetCustomerId.trim();
+      if (!customerId.startsWith('cust_')) {
+        const resolved = await resolveCustomer(customerId);
+        if (resolved.status === 'RESOLVED' && resolved.matches.length === 1) {
+          customerId = resolved.matches[0].customer_id;
+        } else if (resolved.status === 'AMBIGUOUS') {
+          throw new Error('More than one customer matches. Enter a unique customer name or the customer ID.');
+        } else {
+          throw new Error('No customer matches that exact name. Check the spelling or use the customer ID.');
+        }
+      }
       const res = await allocatePaymentManually(selectedEvent.event_id, {
-        customer_id: targetCustomerId.trim(),
+        customer_id: customerId,
         confirmed: true,
         idempotency_key: `alloc_${selectedEvent.event_id}_${Date.now()}`,
       });
@@ -104,6 +141,11 @@ export default function PaymentReviewScreen() {
         </Text>
       </View>
 
+      <TouchableOpacity style={styles.refreshBtn} onPress={handleCreateDemoPayment} disabled={loading}>
+        <Ionicons name="flask-outline" size={16} color="#0f3460" />
+        <Text style={styles.refreshText}>Add synthetic ₹300 payment</Text>
+      </TouchableOpacity>
+
       {actionMessage && (
         <View style={styles.successBanner}>
           <Text style={styles.successText}>{actionMessage}</Text>
@@ -141,13 +183,8 @@ export default function PaymentReviewScreen() {
           </Text>
 
           <Text style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Payer Token: </Text>
-            <Text style={styles.detailValue}>{item.payer_token ?? '(None / Unmapped)'}</Text>
-          </Text>
-
-          <Text style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Source: </Text>
-            <Text style={styles.detailValue}>{item.source}</Text>
+            <Text style={styles.detailLabel}>Review status: </Text>
+            <Text style={styles.detailValue}>{item.resolution_status}</Text>
           </Text>
 
           {item.reason && (
@@ -183,10 +220,10 @@ export default function PaymentReviewScreen() {
             Allocating ₹{(selectedEvent.amount_paise / 100).toFixed(2)} (Event: {selectedEvent.event_id})
           </Text>
 
-          <Text style={styles.inputLabel}>Target Customer ID:</Text>
+          <Text style={styles.inputLabel}>Customer name or ID:</Text>
           <TextInput
             style={styles.input}
-            placeholder="e.g. cust_synth_raju_01"
+            placeholder="e.g. Raju bhai or cust_…"
             value={targetCustomerId}
             onChangeText={setTargetCustomerId}
             autoCapitalize="none"

@@ -43,6 +43,7 @@ import PaymentReviewScreen from '@/features/paymentReview/PaymentReviewScreen';
 import InventoryScreen from '@/features/inventory/InventoryScreen';
 import TimelineScreen from '@/features/timeline/TimelineScreen';
 import InsightsScreen from '@/features/insights/InsightsScreen';
+import { formatFactComparison, formatFactDefinition, formatFactValue, formatPeriodDate } from '@/utils/formatters';
 
 type Tab = 'copilot' | 'payment_review' | 'inventory' | 'timeline' | 'insights';
 
@@ -75,7 +76,7 @@ export default function HomeScreen() {
   // "Aaj kaisa raha?" end-to-end slice state
   const [insightsBrief, setInsightsBrief] = useState<FactsResponse | null>(null);
   const [mockOfferApproved, setMockOfferApproved] = useState(false);
-  const [mockOfferText, setMockOfferText] = useState('Special 5% discount on slow-moving packs this weekend');
+  const [mockOfferText, setMockOfferText] = useState("Weekend special: ask us about today's offer");
 
   // Trigger "Aaj kaisa raha?" insight slice
   const handleLoadInsightsBrief = useCallback(async () => {
@@ -99,18 +100,12 @@ export default function HomeScreen() {
       let custId = activeCustomerId;
       if (!custId) {
         const res = await resolveCustomer(customerName);
-        if (res.status === 'RESOLVED' && res.customer) {
-          custId = res.customer.customer_id;
+        if (res.status === 'RESOLVED' && res.matches.length === 1) {
+          custId = res.matches[0].customer_id;
           setActiveCustomerId(custId);
         } else if (res.status === 'NOT_FOUND') {
-          const created = await createCustomer({
-            display_name: customerName,
-            aliases: ['Raju', 'Raju bhai'],
-            confirmed: true,
-            idempotency_key: `cmd_seed_raju_${Date.now()}`,
-          });
-          custId = created.customer_id;
-          setActiveCustomerId(custId);
+          Alert.alert('Customer Not Found', `Add ${customerName} before checking a balance.`);
+          return;
         } else {
           Alert.alert('Ambiguous Match', `Multiple customers found for "${customerName}".`);
           return;
@@ -120,7 +115,7 @@ export default function HomeScreen() {
       setCustomerBalance(bal.balance_due_paise);
       Alert.alert(
         'Derived Customer Balance',
-        `${customerName} (ID: ${custId})\nOutstanding: ₹${(bal.balance_due_paise / 100).toFixed(2)}\nEntries: ${bal.posted_entries_count}`
+        `${customerName} (ID: ${custId})\nOutstanding: ₹${(bal.balance_due_paise / 100).toFixed(2)}\nEntries: ${bal.entry_count}`
       );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -137,10 +132,10 @@ export default function HomeScreen() {
       let custId = activeCustomerId;
       if (!custId) {
         const res = await resolveCustomer(customerName);
-        if (res.status === 'RESOLVED' && res.customer) {
-          custId = res.customer.customer_id;
+        if (res.status === 'RESOLVED' && res.matches.length === 1) {
+          custId = res.matches[0].customer_id;
           setActiveCustomerId(custId);
-        } else {
+        } else if (res.status === 'NOT_FOUND') {
           const created = await createCustomer({
             display_name: customerName,
             aliases: ['Raju', 'Raju bhai'],
@@ -149,6 +144,9 @@ export default function HomeScreen() {
           });
           custId = created.customer_id;
           setActiveCustomerId(custId);
+        } else {
+          Alert.alert('Ambiguous Match', `Multiple customers found for "${customerName}". Resolve the correct customer before posting credit.`);
+          return;
         }
       }
       const creditRes = await postCredit({
@@ -179,11 +177,11 @@ export default function HomeScreen() {
       let custId = activeCustomerId;
       if (!custId) {
         const res = await resolveCustomer(customerName);
-        if (res.status === 'RESOLVED' && res.customer) {
-          custId = res.customer.customer_id;
+        if (res.status === 'RESOLVED' && res.matches.length === 1) {
+          custId = res.matches[0].customer_id;
           setActiveCustomerId(custId);
         } else {
-          Alert.alert('Customer Not Found', 'Resolve customer first.');
+          Alert.alert(res.status === 'AMBIGUOUS' ? 'Ambiguous Customer' : 'Customer Not Found', 'Resolve the correct customer before posting repayment.');
           return;
         }
       }
@@ -351,7 +349,7 @@ export default function HomeScreen() {
                 <View style={styles.periodBox}>
                   <Text style={styles.periodTitle}>Comparison Window:</Text>
                   <Text style={styles.periodText}>
-                    Active: {insightsBrief.period.start.slice(0, 10)} to {insightsBrief.period.end.slice(0, 10)}
+                    Active: {formatPeriodDate(insightsBrief.period.start, insightsBrief.period.timezone)} to {formatPeriodDate(insightsBrief.period.end, insightsBrief.period.timezone, true)}
                   </Text>
                   <Text style={styles.periodSub}>
                     Compared against preceding 7-day period (Observational only)
@@ -367,18 +365,13 @@ export default function HomeScreen() {
                       <Text style={styles.factMeta}>
                         Source: {fact.source} · ID: {fact.id}
                       </Text>
+                      {formatFactDefinition(fact) && <Text style={styles.factMeta}>{formatFactDefinition(fact)}</Text>}
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
                       <Text style={styles.factValue}>
-                        {typeof fact.value === 'number' && fact.unit === 'INR_paise'
-                          ? `₹${(fact.value / 100).toFixed(2)}`
-                          : `${fact.value} ${fact.unit ?? ''}`}
+                        {formatFactValue(fact)}
                       </Text>
-                      {fact.comparison_value !== undefined && fact.comparison_value !== null && (
-                        <Text style={styles.comparisonText}>
-                          Prev: {fact.comparison_value} {fact.unit ?? ''}
-                        </Text>
-                      )}
+                      {formatFactComparison(fact) && <Text style={styles.comparisonText}>{formatFactComparison(fact)}</Text>}
                     </View>
                   </View>
                 ))}
@@ -403,7 +396,7 @@ export default function HomeScreen() {
                     </View>
                   </View>
                   <Text style={styles.mockActionDesc}>
-                    Munim suggests an in-store counter notice to boost slow-moving inventory:
+                    Optional shop-side experiment. UPI trends cannot identify which products are slow-moving; choose the item and offer yourself:
                   </Text>
                   <TextInput
                     style={styles.mockActionInput}

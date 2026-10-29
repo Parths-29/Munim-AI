@@ -45,11 +45,12 @@ export default function InventoryScreen() {
     setStatusMessage(null);
     try {
       const res = await resolveProduct(searchQuery.trim());
-      if (res.status === 'RESOLVED' && res.product) {
-        setFoundProductId(res.product.product_id);
-        const stock = await fetchProductStock(res.product.product_id);
-        setStockInfo({ ...stock, product_name: res.product.name });
-        setStatusMessage(`Resolved: ${res.product.name} (Unit: ${res.product.unit})`);
+      if (res.status === 'RESOLVED' && res.matches.length === 1) {
+        const product = res.matches[0];
+        setFoundProductId(product.product_id);
+        const stock = await fetchProductStock(product.product_id);
+        setStockInfo({ ...stock, product_name: product.name });
+        setStatusMessage(`Resolved: ${product.name} (Unit: ${product.unit})`);
       } else if (res.status === 'AMBIGUOUS') {
         setErrorMessage(`Multiple products matched "${searchQuery}". Please specify an exact name.`);
         setStockInfo(null);
@@ -112,8 +113,9 @@ export default function InventoryScreen() {
         source_utterance: `Physical count: ${qty}`,
         source_channel: 'text',
       });
+      const previousQuantity = stockInfo?.on_hand_quantity ?? 0;
       setStatusMessage(
-        `✓ Physical count updated! Previous: ${res.previous_quantity}, Counted: ${res.counted_quantity}, Delta: ${res.quantity_delta}`
+        `✓ Physical count updated! Previous: ${previousQuantity}, Counted: ${res.counted_quantity}, Delta: ${res.quantity_delta} ${res.unit}`
       );
       setPhysicalCountInput('');
       const updatedStock = await fetchProductStock(foundProductId);

@@ -10,6 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { fetchInsightFacts, Persona, FactsResponse } from '@/api/ledgerClient';
 import { SyntheticDataPill } from '@/components/InfoBanner';
+import { formatFactComparison, formatFactDefinition, formatFactValue, formatPeriodDate } from '@/utils/formatters';
 
 const PERSONAS: { key: Persona; label: string }[] = [
   { key: 'kirana', label: 'Kirana Store' },
@@ -92,7 +93,7 @@ export default function InsightsScreen() {
             <Text style={styles.metaRow}>
               <Text style={styles.metaLabel}>Active Window: </Text>
               <Text style={styles.metaValue}>
-                {factsData.period.start.slice(0, 10)} to {factsData.period.end.slice(0, 10)}
+                {formatPeriodDate(factsData.period.start, factsData.period.timezone)} to {formatPeriodDate(factsData.period.end, factsData.period.timezone, true)}
               </Text>
             </Text>
           </View>
@@ -109,18 +110,12 @@ export default function InsightsScreen() {
               </View>
 
               <Text style={styles.factValue}>
-                {fact.value !== null && fact.value !== undefined
-                  ? typeof fact.value === 'number' && fact.unit === 'INR_paise'
-                    ? `₹${(fact.value / 100).toFixed(2)}`
-                    : `${fact.value} ${fact.unit ?? ''}`
-                  : '(Unavailable)'}
+                {formatFactValue(fact)}
               </Text>
 
-              {fact.comparison_value !== undefined && fact.comparison_value !== null && (
-                <Text style={styles.comparisonRow}>
-                  Previous period: {fact.comparison_value} {fact.unit ?? ''} ({fact.comparison_period ?? 'prior window'})
-                </Text>
-              )}
+              {formatFactComparison(fact) && <Text style={styles.comparisonRow}>{formatFactComparison(fact)}</Text>}
+
+              {formatFactDefinition(fact) && <Text style={styles.factMeta}>{formatFactDefinition(fact)}</Text>}
 
               <Text style={styles.factMeta}>
                 Source: {fact.source} · Fact ID: {fact.id}

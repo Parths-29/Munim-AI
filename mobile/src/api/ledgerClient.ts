@@ -47,8 +47,7 @@ export type CustomerResolveStatus = 'RESOLVED' | 'AMBIGUOUS' | 'NOT_FOUND';
 export interface CustomerResolveResponse {
   status: CustomerResolveStatus;
   query: string;
-  customer?: Customer;
-  matches?: Customer[];
+  matches: Customer[];
 }
 
 export async function resolveCustomer(query: string): Promise<CustomerResolveResponse> {
@@ -77,7 +76,7 @@ export interface CustomerBalanceResponse {
   customer_id: string;
   balance_due_paise: number;
   currency: 'INR';
-  posted_entries_count: number;
+  entry_count: number;
 }
 
 export interface LedgerEntryRequest {
@@ -90,9 +89,8 @@ export interface LedgerEntryRequest {
 
 export interface LedgerEntryResponse {
   entry_id: string;
-  shop_id: string;
   customer_id: string;
-  type: 'CREDIT' | 'REPAYMENT';
+  entry_type: 'CREDIT' | 'REPAYMENT';
   amount_paise: number;
   source_event_id: string;
   status: 'POSTED';
@@ -149,19 +147,18 @@ export interface CreateProductRequest {
   confirmed: boolean;
   idempotency_key: string;
   source_utterance?: string;
-  source_channel?: string;
+  source_channel?: 'text' | 'voice' | 'provider_mock' | 'system';
 }
 
 export interface ProductResolveResponse {
   status: 'RESOLVED' | 'AMBIGUOUS' | 'NOT_FOUND';
   query: string;
-  product?: Product;
-  matches?: Product[];
+  matches: Product[];
 }
 
 export interface ProductStockResponse {
   product_id: string;
-  product_name?: string;
+  product_name: string;
   on_hand_quantity: number;
   unit: string;
   movement_count: number;
@@ -173,14 +170,16 @@ export interface StockoutObservationRequest {
   idempotency_key: string;
   confirmed: boolean;
   source_utterance?: string;
-  source_channel?: string;
+  source_channel?: 'text' | 'voice' | 'provider_mock' | 'system';
 }
 
 export interface StockoutObservationResponse {
   observation_id: string;
   product_id: string;
   status: 'OBSERVED';
-  note: string;
+  source_event_id: string;
+  created_at: string;
+  idempotent_replay: boolean;
 }
 
 export interface PhysicalCountRequest {
@@ -190,16 +189,20 @@ export interface PhysicalCountRequest {
   idempotency_key: string;
   confirmed: boolean;
   source_utterance?: string;
-  source_channel?: string;
+  source_channel?: 'text' | 'voice' | 'provider_mock' | 'system';
 }
 
 export interface PhysicalCountResponse {
   movement_id: string;
   product_id: string;
-  previous_quantity: number;
   counted_quantity: number;
   quantity_delta: number;
-  type: 'PHYSICAL_COUNT';
+  unit: string;
+  reason: 'PHYSICAL_COUNT';
+  status: 'POSTED';
+  source_event_id: string;
+  created_at: string;
+  idempotent_replay: boolean;
 }
 
 export async function createProduct(req: CreateProductRequest): Promise<Product> {
@@ -259,9 +262,11 @@ export async function recordPhysicalCount(req: PhysicalCountRequest): Promise<Ph
 export interface TimelineEvent {
   event_id: string;
   event_type: string;
-  related_entity_id?: string | null;
-  source_channel?: string | null;
-  source_utterance?: string | null;
+  entity_type: string;
+  entity_id: string;
+  source_event_id: string;
+  source_channel: string;
+  source_utterance: string | null;
   status: string;
   summary: string;
   created_at: string;
@@ -321,17 +326,36 @@ export interface PaymentReviewItem {
   amount_paise: number;
   status: string;
   resolution_status: string;
-  reason?: string | null;
+  reason: string | null;
   occurred_at: string;
-  created_at?: string;
-  payer_token?: string | null;
-  source?: string;
+  created_at: string;
 }
 
 export interface ManualAllocateRequest {
   customer_id: string;
   confirmed: boolean;
   idempotency_key: string;
+}
+
+export interface MockPaymentIntakeRequest {
+  event_id: string;
+  amount_paise: number;
+  status: 'SUCCESS' | 'PENDING' | 'FAILED' | 'REVERSED';
+  occurred_at: string;
+  idempotency_key: string;
+  payer_token?: string | null;
+  source: 'provider_mock';
+}
+
+export interface MockPaymentIntakeResponse {
+  event_id: string;
+  amount_paise: number;
+  status: string;
+  resolution_status: string;
+  reason: string | null;
+  allocation_entry_id: string | null;
+  created_at: string;
+  idempotent_replay: boolean;
 }
 
 export interface ManualAllocateResponse {
@@ -346,6 +370,19 @@ export interface ManualAllocateResponse {
 export async function fetchPaymentReviewQueue(): Promise<PaymentReviewItem[]> {
   const res = await fetch(`${API_BASE_URL}/payments/review`);
   if (!res.ok) throw new Error(`Fetch payment review queue failed with HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function intakeMockPayment(req: MockPaymentIntakeRequest): Promise<MockPaymentIntakeResponse> {
+  const res = await fetch(`${API_BASE_URL}/payments/intake`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail ?? `Mock payment intake failed with HTTP ${res.status}`);
+  }
   return res.json();
 }
 
