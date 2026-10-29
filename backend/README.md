@@ -1,6 +1,6 @@
 # Munim-AI backend scaffold
 
-Phase 1 provides only a small FastAPI health endpoint. Domain commands, storage, and AI integrations are intentionally not implemented in this scaffold.
+The current backend slice provides a health endpoint, synthetic-shop customer/alias records, and an append-only credit/repayment ledger. It does not yet implement voice/LLM commands, stock, payment reconciliation, or live integrations.
 
 ## Requirements
 
@@ -33,3 +33,41 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 The health response confirms only that the local API process is responding. It does not indicate a Paytm connection or a ready database.
+
+## Current endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/health` | Local API liveness and synthetic-only mode. |
+| `POST` | `/customers` | Add a synthetic customer and aliases after explicit confirmation. |
+| `GET` | `/customers/resolve?query=Raju%20bhai` | Exact alias lookup; returns `RESOLVED`, `AMBIGUOUS`, or `NOT_FOUND`. |
+| `GET` | `/ledger/customers/{customer_id}/balance` | Derive balance from posted ledger entries. |
+| `POST` | `/ledger/credits` | Append a confirmed credit entry. |
+| `POST` | `/ledger/repayments` | Append a confirmed repayment, rejecting amounts above the current due balance. |
+
+For all writes, the caller supplies a stable `idempotency_key`, a unique `source_event_id`, and `confirmed`. Use the accepted command ID as the idempotency key. Replaying either the key or source event has one effect; reusing one for different operation details returns `409 Conflict`.
+
+Example credit request:
+
+```json
+{
+  "customer_id": "cust_example",
+  "amount_paise": 5000,
+  "source_event_id": "event_demo_credit_01",
+  "idempotency_key": "cmd_demo_credit_01",
+  "confirmed": true
+}
+```
+
+The SQLite database is created at `backend/data/munim.sqlite3` by default. Override its location with `MUNIM_DB_PATH`. It is ignored by Git and should contain synthetic demo data only.
+
+## Seed the demo customer
+
+From the repository root, after installing backend requirements:
+
+```powershell
+cd backend
+python seed_demo.py
+```
+
+The seed command is designed to be replay-safe. It creates the synthetic Raju customer and a ₹500 opening credit once, then prints the customer ID and derived balance. The remaining canonical demo commands can build on this opening entry.
