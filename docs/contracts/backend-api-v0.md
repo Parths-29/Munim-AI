@@ -1,4 +1,4 @@
-# Backend API contract v0.3
+# Backend API contract v0.5
 
 This describes the synthetic single-shop backend slice on the current task branch. It supplements the AI proposal schemas; it is not a Paytm API contract.
 
@@ -9,7 +9,7 @@ Base URL for local development: `http://127.0.0.1:8000`. Money is integer paise.
 Returns local liveness only:
 
 ```json
-{"status":"ok","phase":"inventory-timeline","data_mode":"synthetic-only"}
+{"status":"ok","phase":"payment-review","data_mode":"synthetic-only"}
 ```
 
 ## `POST /customers`
@@ -87,6 +87,18 @@ Request fields: `product_id`, non-negative integer `counted_quantity`, `source_e
 
 Returns recent event IDs, event types, related entity, source event/channel/utterance, status, summary, and timestamp. The endpoint is read-only; it does not expose payment-provider credentials or raw customer contact data.
 
-## Explicitly not implemented in v0.3
+## `GET /insights/facts?persona=kirana`
 
-Mocked payment intake and allocation, voice/LLM parsing, business insight facts, action publication, authentication, and production payment integration. Do not build mobile screens that imply these backend behaviors already exist.
+Returns facts in the shape defined by `docs/contracts/facts.schema.json`. Supported personas are `kirana`, `tea_stall`, and `medical_store`. The API seeds a deterministic 90-day synthetic transaction fixture when its local database is empty. The current window is the latest 7 full fixture days and the comparison is the preceding 7 full days. Values are computed in Python from rows; no LLM computes metrics. Raw payer tokens are never included in the response. Collections are UPI-only, lapsed-payer counts are synthetic-token counts, and before/after differences are not causal claims.
+
+## Mocked payment intake and review
+
+`POST /payments/payer-mappings` accepts `payer_token`, `customer_id`, `confirmed`, and `idempotency_key`. It creates one merchant-scoped synthetic-token mapping only after confirmation; conflicting mappings return `409`.
+
+`POST /payments/intake` accepts `event_id`, `amount_paise`, `status`, timezone-aware `occurred_at`, `idempotency_key`, optional `payer_token`, and `source: "provider_mock"`. Shop scope is fixed to the synthetic demo shop; the API does not connect to Paytm. Duplicate event IDs are idempotent only when the payload matches.
+
+An event is automatically allocated as a repayment only when its status is `SUCCESS`, its payer token has an exact confirmed mapping, and its full amount is no greater than that customer's outstanding balance. Failed, pending, or reversed events do not change the ledger. Missing mapping, no balance, or amount above balance is not auto-allocated. `GET /payments/review` lists unresolved successful events. `POST /payments/{event_id}/allocate` allows a merchant-confirmed manual allocation to a selected demo customer after checking that the full amount fits the outstanding balance. Neither path performs partial allocation. Payment events and manual resolutions are append-only; ledger balances remain derived from ledger entries.
+
+## Explicitly not implemented in v0.5
+
+Voice/LLM parsing, action publication, authentication, and production payment integration. Do not build mobile screens that imply these backend behaviors already exist.

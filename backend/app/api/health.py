@@ -15,4 +15,4 @@ class HealthResponse(BaseModel):
 @router.get("/health", response_model=HealthResponse, tags=["health"])
 def health() -> HealthResponse:
     """Report that the local API process is responding."""
-    return HealthResponse(status="ok", phase="inventory-timeline", data_mode="synthetic-only")
+    return HealthResponse(status="ok", phase="payment-review", data_mode="synthetic-only")

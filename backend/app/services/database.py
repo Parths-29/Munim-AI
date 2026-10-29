@@ -162,6 +162,100 @@ BEFORE DELETE ON business_events
 BEGIN
     SELECT RAISE(ABORT, 'business events are append-only');
 END;
+
+CREATE TABLE IF NOT EXISTS synthetic_transactions (
+    transaction_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    amount_paise INTEGER NOT NULL CHECK (amount_paise > 0),
+    status TEXT NOT NULL CHECK (status IN ('SUCCESS', 'PENDING', 'FAILED', 'REVERSED')),
+    payer_token TEXT,
+    source TEXT NOT NULL CHECK (source = 'synthetic'),
+    UNIQUE (shop_id, transaction_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_synthetic_tx_shop_time
+    ON synthetic_transactions(shop_id, occurred_at);
+
+CREATE TABLE IF NOT EXISTS payer_customer_mappings (
+    mapping_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    payer_token TEXT NOT NULL,
+    customer_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    UNIQUE (shop_id, payer_token),
+    FOREIGN KEY (shop_id, customer_id) REFERENCES customers(shop_id, customer_id)
+);
+
+CREATE TRIGGER IF NOT EXISTS payer_mappings_no_update
+BEFORE UPDATE ON payer_customer_mappings
+BEGIN
+    SELECT RAISE(ABORT, 'payer mappings are append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS payer_mappings_no_delete
+BEFORE DELETE ON payer_customer_mappings
+BEGIN
+    SELECT RAISE(ABORT, 'payer mappings are append-only');
+END;
+
+CREATE TABLE IF NOT EXISTS payment_events (
+    event_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    amount_paise INTEGER NOT NULL CHECK (amount_paise > 0),
+    payment_status TEXT NOT NULL CHECK (payment_status IN ('SUCCESS', 'PENDING', 'FAILED', 'REVERSED')),
+    occurred_at TEXT NOT NULL,
+    payer_token TEXT,
+    source TEXT NOT NULL CHECK (source = 'provider_mock'),
+    idempotency_key TEXT NOT NULL UNIQUE,
+    resolution_status TEXT NOT NULL CHECK (resolution_status IN ('ALLOCATED', 'REVIEW', 'UNMATCHED', 'IGNORED')),
+    resolution_reason TEXT,
+    allocation_entry_id TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (shop_id, event_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_payment_review_queue
+    ON payment_events(shop_id, resolution_status, created_at DESC);
+
+CREATE TRIGGER IF NOT EXISTS payment_events_no_update
+BEFORE UPDATE ON payment_events
+BEGIN
+    SELECT RAISE(ABORT, 'payment events are append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS payment_events_no_delete
+BEFORE DELETE ON payment_events
+BEGIN
+    SELECT RAISE(ABORT, 'payment events are append-only');
+END;
+
+CREATE TABLE IF NOT EXISTS payment_resolutions (
+    resolution_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    customer_id TEXT NOT NULL,
+    amount_paise INTEGER NOT NULL CHECK (amount_paise > 0),
+    allocation_entry_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    UNIQUE (shop_id, event_id),
+    FOREIGN KEY (shop_id, event_id) REFERENCES payment_events(shop_id, event_id),
+    FOREIGN KEY (shop_id, customer_id) REFERENCES customers(shop_id, customer_id)
+);
+
+CREATE TRIGGER IF NOT EXISTS payment_resolutions_no_update
+BEFORE UPDATE ON payment_resolutions
+BEGIN
+    SELECT RAISE(ABORT, 'payment resolutions are append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS payment_resolutions_no_delete
+BEFORE DELETE ON payment_resolutions
+BEGIN
+    SELECT RAISE(ABORT, 'payment resolutions are append-only');
+END;
 """
 
 
