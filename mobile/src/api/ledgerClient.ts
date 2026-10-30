@@ -502,9 +502,16 @@ export async function transcribeMerchantAudio(uri: string): Promise<SpeechTransc
     const audioResponse = await fetch(uri);
     if (!audioResponse.ok) throw new Error('Could not read the browser recording. Please record again.');
     const audioBlob = await audioResponse.blob();
-    const contentType = audioBlob.type?.split(';', 1)[0] || 'audio/webm';
+    const detectedType = audioBlob.type?.split(';', 1)[0].trim().toLowerCase() || '';
+    const normalizedType = detectedType === 'video/webm' ? 'audio/webm' : detectedType;
+    const browserAudioTypes = new Set(['audio/aac', 'audio/mp4', 'audio/m4a', 'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm', 'audio/x-m4a', 'audio/3gpp']);
+    const contentType = browserAudioTypes.has(normalizedType) ? normalizedType : 'audio/webm';
     const extension = contentType.includes('webm') ? 'webm' : contentType.includes('wav') ? 'wav' : 'm4a';
-    form.append('file', audioBlob, `merchant-voice.${extension}`);
+    // FormData uses the Blob's own type, not a separate header. Re-wrap it so
+    // codec suffixes such as "audio/webm;codecs=opus" do not leak into the
+    // multipart Content-Type and fail the backend allowlist.
+    const normalizedBlob = new Blob([audioBlob], { type: contentType });
+    form.append('file', normalizedBlob, `merchant-voice.${extension}`);
   } else {
     form.append('file', {
       uri,

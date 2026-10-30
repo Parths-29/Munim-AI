@@ -217,3 +217,13 @@
 - **Checks:** `npm run typecheck` passed. No real user audio was recorded or transmitted. No browser microphone permission was granted by Codex.
 - **Limitations:** A real spoken recording from the browser or phone is still needed to verify audio capture and transcription end to end. A browser must be allowed microphone access; an in-app browser may restrict that permission. Gemini remains unconfigured effectively until a valid key is supplied.
 - **Next:** Reopen/reload the local browser preview, allow microphone access if prompted, record one short spoken command, and confirm the returned transcript appears in the editable input. Then test the same flow on the Android device. Replace the invalid Gemini key separately if Gemini summaries are needed.
+
+### 2026-10-30 — Normalize browser recording MIME metadata
+
+- **Goal:** Resolve the reported `415 Unsupported audio format` error from browser voice uploads.
+- **Cause:** Web `FormData` uses the MIME type stored on the Blob itself; deriving a normalized type for the filename alone did not remove codec parameters from that Blob. Browser media recorders may also label audio-only WebM as `video/webm` or `application/octet-stream`.
+- **Changes:** The mobile client now wraps browser audio in a new Blob with a normalized supported audio MIME type. The backend strips MIME codec parameters, normalizes `video/webm`, and infers the media type from a known filename extension only when the upload advertises a generic binary type. Unsupported types still fail closed with a clearer error mentioning WebM.
+- **Files:** `mobile/src/api/ledgerClient.ts`, `backend/app/api/speech.py`, and `docs/contracts/backend-api-v0.md`.
+- **Checks:** Mobile `npm run typecheck` and backend `python -m compileall -q app` passed. A focused in-memory route check confirmed `audio/webm;codecs=opus`, `video/webm`, and `application/octet-stream` plus a `.webm` filename all normalize to `audio/webm` before forwarding. No real recording was captured in this check.
+- **Runtime:** Restarted the local Uvicorn process so it loaded the updated route; `/health` remains available on port 8000. The Expo Web dev server remains on port 8081.
+- **Next:** Retry a short real recording in the browser. If upload gets past validation, Sarvam should return either a transcript or a distinct “no speech detected” response. Report the exact new message if it still fails.
