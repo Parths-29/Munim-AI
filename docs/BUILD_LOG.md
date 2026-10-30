@@ -5,11 +5,11 @@
 ## Current status snapshot
 
 **Last checked:** 30 October 2026  
-**Active work branch:** `codex/mock-action-outcomes`, started from `origin/main` at `318863e`
-**Base:** `origin/main` at `318863e` (includes merged PR #10)
-**Latest pushed commit:** `0893ede` — `feat: persist merchant mock actions and track outcomes`
-**Working tree:** clean after the milestone commit.
-**Merge status:** explainer hardening and confirmed text commands are merged into `main` through PRs #7–#10. The action tracking milestone is pushed to `codex/mock-action-outcomes`; no PR was opened.
+**Active work branch:** `codex/sarvam-voice-input`, based on `codex/mock-action-outcomes` at `5a990b5`
+**Base lineage:** `origin/main` at `318863e` (includes merged PR #10), plus pushed mock-action tracking milestone.
+**Latest pushed milestone before current work:** `5a990b5` — `docs: record mock action outcome milestone`
+**Working tree:** voice-input changes are in progress on this branch.
+**Merge status:** PRs #7–#10 are in `main`; mock-action tracking and the current voice-input work are on pushed feature branches, with no PR opened by Codex.
 
 ### Product and scope
 
@@ -34,18 +34,19 @@
     - `GET /insights/facts` — deterministic, evidence-backed synthetic UPI facts (payment collections, collection change %, median ticket, failure rate, lapsed repeat payers).
     - `POST /insights/explain` — server-side facts-only AI explanation with strict number validation and deterministic fallback.
     - `POST /actions/mock`, `GET /actions/latest` — append-only merchant-approved mock action, baseline snapshot, and scheduled/available/insufficient-data outcome state.
+    - `POST /speech/transcribe` — short audio transcription through backend-held Sarvam credentials; the endpoint returns text and does not execute commands.
     - `POST /payments/intake`, `GET /payments/review`, `POST /payments/{id}/allocate`, `POST /payments/mappings` — synthetic payment intake, review queue for unmatched payments, manual allocation with merchant confirmation, and payer token mappings.
 - **Mobile (`mobile/`):**
   - Expo SDK 58, React Native 0.88, and TypeScript app under `mobile/`.
   - Tabbed interface: Copilot, Pay Review, Inventory, Timeline, Insights.
   - "Aaj kaisa raha?" brief: queries facts/explanation and restores merchant-approved mock actions with a visible baseline and observation window.
-  - Copilot text box: limited deterministic parser for credit, repayment, balance, and stockout commands, with exact entity resolution and confirmation previews.
+  - Copilot text/voice input: limited deterministic parser for credit, repayment, balance, and stockout commands; transcripts remain editable and commands still need explicit confirmation.
   - Payer review flow: displays unmatched synthetic payments and allows merchant-confirmed allocation to known customers.
   - Inventory flow: stock lookup, stockout observation recording, physical inventory count reconciliation.
 - **Required Environment Variables (redacted):**
   - Backend (`.env` in repository root or backend working directory, gitignored):
     - `GEMINI_API_KEY`: Google Gemini API key (tested model: `gemini-3.8-flash`).
-    - `SARVAM_API_KEY`: Reserved for future speech-to-text / Indic voice models.
+    - `SARVAM_API_KEY`: Optional backend-only credential for short speech-to-text. Never put it in `mobile/.env` or `EXPO_PUBLIC_*`.
     - `MONGODB_URI`: Reserved for future MongoDB storage; demo runs on SQLite.
     - `VITE_API_BASE_URL`: Web / test client base URL setting.
   - Mobile (`mobile/.env` or Expo public config):
@@ -53,7 +54,7 @@
 
 ### Verification ledger
 
-- **Verified from Git at this snapshot:** remote refs fetched; `main` is `318863e` and includes PR #10; `codex/mock-action-outcomes` starts at that commit.
+- **Verified from Git before this milestone:** remote refs fetched; `main` is `318863e` and includes PR #10; the mock-action branch is pushed and recorded below.
 - **Verified by Codex:** `git diff --check` passed before the hardening commit; see the latest verification milestone below for runtime/mobile checks on the current branch.
 - **Reported by Antigravity, not rerun on the hardening branch:** TypeScript typecheck and Android Expo export passed for the explainer implementation; fallback endpoint returned valid JSON; Gemini requests reportedly timed out or returned 503.
 - **Reported in the later Antigravity audit:** mobile typecheck and Android Expo export passed; direct Gemini call timed out after about 15 seconds. The audit described backend facts/explainer as passing, but its supplied command history showed earlier pytest, TestClient, and direct Python smoke attempts exiting with code 1 without the later successful command/output. Codex subsequently reproduced the backend fallback path through local HTTP; details are below.
@@ -178,3 +179,13 @@
 - **Checks:** `python -m compileall -q app` passed. An isolated SQLite service smoke passed for approval persistence, idempotency replay, latest-action restore, unconfirmed rejection, and mismatched-key rejection. `npm run typecheck` passed. `npx expo export --platform android` passed (707 modules; Hermes bundle exported). `git diff --check` passed.
 - **Limitations:** No live offer publishing, live Paytm feed, or production authentication. The post-approval measurement cannot complete on the current fixed historical fixture.
 - **Next:** Verify API idempotency/confirmation and mobile build, then move to a user-facing voice input slice or physical-device demo.
+
+### 2026-10-30 — Sarvam voice transcription into confirmed command flow
+
+- **Goal:** Let a merchant speak a short Hindi/Hinglish request, review the transcript, and use the existing safe command path.
+- **Changes:** Added `POST /speech/transcribe` using Sarvam `saaras:v4` in transliteration mode with merchant/product keyterms; credentials stay server-side and short audio is not persisted. Added Expo Audio microphone recording with permission text and a 20-second stop, cache-file deletion after upload, transcript language label, and editable transcript in the command input. Sending a transcript enters the existing deterministic parser; any write still requires the normal preview/confirmation. Voice source is carried into ledger/customer/stockout records.
+- **Branch/base:** `codex/sarvam-voice-input`, based on `codex/mock-action-outcomes` at `5a990b5` (which itself includes main through `318863e`).
+- **Checks:** `python -m compileall -q app` passed; FastAPI OpenAPI includes `/speech/transcribe`; mocked Sarvam adapter check confirmed multipart fields, server-side key header, and response mapping without a live API request. A parser check confirmed a transliterated `Raju bhai ka 50 rupaye udhaar likh do` becomes a ₹50 preview for the exact `Raju bhai` alias. `npm run typecheck` passed. Android Expo export passed (722 modules). `git diff --check` passed.
+- **Not yet verified:** Actual Sarvam account/credential connectivity and recording/transcription on a physical phone. No live API call was made to avoid consuming quota; type/build checks do not prove microphone or provider behavior on-device.
+- **Limitations:** The fixed parser supports a narrow Romanized Hindi/Hinglish command set and numeric amounts; unclear or unsupported transcripts stop for manual correction. Recording cap is 20 seconds in the app; the backend also caps uploads at 12 MB. Text remains available if voice is unavailable.
+- **Next:** Push this branch, then have the team try one spoken command on the demo phone with the backend's `SARVAM_API_KEY` configured. Use the observed transcript to fix recognition/parser issues before adding voice responses or broad language understanding.

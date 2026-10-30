@@ -1,6 +1,6 @@
 # Munim-AI backend scaffold
 
-The current backend slice provides deterministic synthetic merchant facts, synthetic-shop customer/alias records, an append-only credit/repayment ledger, verified stock counts, stockout observations, mock payment intake/review, and an append-only activity timeline. It does not implement voice/LLM commands or live Paytm integrations.
+The backend provides deterministic synthetic merchant facts, an append-only ledger and inventory record, mock payment review, merchant-approved mock actions, and short Sarvam speech transcription. Voice transcription returns text only; it does not execute commands. There is no live Paytm integration.
 
 ## Requirements
 
@@ -19,6 +19,8 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Open `http://127.0.0.1:8000/health` or `http://127.0.0.1:8000/docs`.
+
+Voice transcription is optional and requires `SARVAM_API_KEY` in a backend-only environment variable or the ignored root/backend `.env` file. Never place this key in `mobile/.env` or an `EXPO_PUBLIC_*` variable. The app records at most 20 seconds, and the backend forwards the audio to Sarvam without saving it.
 
 ## Run on macOS/Linux
 
@@ -40,6 +42,9 @@ The health response confirms only that the local API process is responding. It d
 |---|---|---|
 | `GET` | `/health` | Local API liveness and synthetic-only mode. |
 | `GET` | `/insights/facts?persona=kirana` | Deterministic evidence-linked facts for kirana, tea-stall, or medical-store demo data. |
+| `POST` | `/speech/transcribe` | Transcribe a short audio upload using server-side Sarvam credentials; returns text only. |
+| `POST` | `/actions/mock` | Save a confirmed mock action and schedule its outcome window. |
+| `GET` | `/actions/latest?persona=kirana` | Restore the latest mock action and its observation-window status. |
 | `POST` | `/customers` | Add a synthetic customer and aliases after explicit confirmation. |
 | `GET` | `/customers/resolve?query=Raju%20bhai` | Exact alias lookup; returns `RESOLVED`, `AMBIGUOUS`, or `NOT_FOUND`. |
 | `GET` | `/ledger/customers/{customer_id}/balance` | Derive balance from posted ledger entries. |

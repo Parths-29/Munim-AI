@@ -26,6 +26,16 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Munim-AI to record a short voice request.",
+          "recordAudioAndroid": true,
+          "enableBackgroundRecording": false
+        }
+      ]
+    ]
   }
 }
