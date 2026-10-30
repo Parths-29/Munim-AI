@@ -145,6 +145,89 @@ Supplier payables are money **the shop owes**. They are stored in `suppliers`, `
 
 Idempotency follows the ledger rules: replay of the same key/source event returns the original entry with `idempotent_replay: true`; reuse for different details returns `409`.
 
+## Stock-inflow proposals: invoice photos and manual bills (v0.9, Phases 2–3)
+
+A **proposal** is a versioned draft. Creating, reading, or revising one never changes stock or supplier dues. Validation is recomputed on every read, so a draft reflects current products, suppliers, conversions, and posted invoices.
+
+### Create
+
+- `POST /invoices/proposals` — multipart: `file` (JPEG/PNG/WebP), `idempotency_key`, optional `supplier_id`. The backend sniffs the real format from the bytes (the declared type must agree), reads dimensions, and enforces limits: default 8 MB (`MUNIM_INVOICE_MAX_BYTES`), sides 100–10,000 px, ≤ 50 MP. Errors: `400` empty, `413` too large, `415` unsupported or mismatched type, `422` malformed or too small. The image is processed in memory and discarded; only a SHA-256 digest is kept for duplicate-photo hints (`image_retained: false`). Replaying the key with the same image returns the same proposal; with a different image, `409`.
+- `POST /invoices/proposals/manual` — the same content as JSON (`supplier`, `invoice`, `lines`, `idempotency_key`) for typed bills or when extraction is unavailable.
+
+Extraction provider (`MUNIM_INVOICE_PROVIDER`): `gemini` (default; backend-only key, model `GEMINI_VISION_MODEL` → `GEMINI_MODEL` → `gemini-3.8-flash`, timeout `MUNIM_VISION_TIMEOUT_SECONDS`, default 20 s), `fake` (a deterministic synthetic bill for demos), or `none`. The model is asked to copy printed values as text. Deterministic code converts amounts to paise and quantities to whole numbers. Anything unreadable becomes `null` plus a note; a fractional quantity is never rounded and no value is invented. If the provider is down or times out, the response is still `201`: an empty draft with `extraction.status = "PROVIDER_UNAVAILABLE"`, ready for manual entry.
+
+### Proposal view
+
+`proposal_id`, `source_kind`, `status` (`NEEDS_REVIEW`, `READY`, `CONFIRMED`, `REJECTED`, `EXPIRED`; default expiry 7 days), `version`, `content_hash`, `supplier` (match status `RESOLVED`/`SELECTED`/`AMBIGUOUS`/`NOT_FOUND`/`NOT_PROVIDED` with candidates), `invoice` (number, date, subtotal/tax/discount/freight/other/rounding/total in paise, per-field confidence), `lines[]`, `issues[]`, `totals`, `ready_to_confirm`, `warnings_require_acknowledgement`, `extraction` (provider, model, status, correlation ID).
+
+Each line has `source_text`, `product_name_text`, `matched_product_id`, `match_status` (`MATCHED` exact alias, `SELECTED` by the merchant, `NEEDS_SELECTION` with candidates, `NOT_FOUND`), `quantity`, `unit_text`, canonical `unit`, `unit_options`, `conversion_factor`, `base_quantity`, `base_unit`, `unit_cost_paise`, `line_total_paise`, `confidence`, `accepted`, and its own `issues`.
+
+Issue severities:
+
+- **blocking** — stops confirmation. Examples: `PRODUCT_UNRESOLVED`, `PRODUCT_AMBIGUOUS`, `QUANTITY_MISSING`, `UNIT_MISSING`, `UNIT_CONVERSION_UNKNOWN`, `LOW_CONFIDENCE` (below `MUNIM_INTAKE_MIN_CONFIDENCE`, default 0.80, until the merchant verifies), `LOW_CONFIDENCE_HEADER`, `SUPPLIER_AMBIGUOUS`, `DUPLICATE_INVOICE_ALREADY_POSTED`, `DUPLICATE_INVOICE_CONFLICT`, `NO_ACCEPTED_LINES`.
+- **warning** — needs `acknowledge_warnings: true` at confirm. Examples: `LINE_TOTAL_MISMATCH` (quantity × unit cost ≠ line total), `INVOICE_TOTAL_MISMATCH` (subtotal + tax + freight + other − discount + rounding ≠ total), `LINES_SUBTOTAL_MISMATCH`, `POSSIBLE_DUPLICATE_*`, extraction notes.
+- **info** — advisory. Examples: `COMPONENTS_UNKNOWN` (components not shown are never derived), `TOTAL_UNKNOWN`.
+
+The arithmetic tolerance is `MUNIM_INVOICE_ROUNDING_TOLERANCE_PAISE` (default 100). Mismatched source values are kept as printed, never silently corrected.
+
+Units: synonyms of the same unit are normalized (`pkt`/`packets` → `packet`). A different unit (`case`, `crate`, `dozen`) needs either a merchant-entered `conversion_factor` on the line or a saved conversion. `POST /products/{id}/unit-conversions` takes `{unit, base_units_per_unit, confirmed, idempotency_key}`; conversions are append-only and the latest one wins. Pack sizes are never assumed.
+
+### Revise / reject
+
+- `POST /invoices/proposals/{id}/revise` — `expected_version`, `supplier {supplier_id | label}`, `invoice {…, verified}`, and the full `lines[]` (keep `line_id` to edit a line, omit it to add one, set `accepted: false` to exclude one, and set `merchant_verified`). This increments `version`, recomputes `content_hash`, and appends to `intake_proposal_revisions`. A stale version returns `409 STALE_PROPOSAL`.
+- `POST /invoices/proposals/{id}/reject` — `{expected_version, confirmed: true}`.
+
+### Confirm (atomic posting)
+
+`POST /invoices/proposals/{id}/confirm` with `{expected_version, content_hash, paid_now_paise, acknowledge_warnings, confirmed: true, idempotency_key}`.
+
+1. The version and hash must match the current draft, otherwise `409 STALE_PROPOSAL`. An amount edited after the preview cannot be posted without a fresh preview.
+2. The server revalidates everything. Blocking issues return `409 PROPOSAL_NOT_READY` with the issue list; unacknowledged warnings return `409 WARNINGS_NOT_ACKNOWLEDGED`.
+3. When a total exists, `paid_now_paise` is required (0 if unpaid) and must satisfy `0 ≤ paid_now ≤ total`. It is never inferred from a "PAID" stamp. A positive unpaid amount requires a supplier, otherwise `409 SUPPLIER_REQUIRED_FOR_PAYABLE`.
+4. **One transaction** appends:
+   - a `stock_receipts` row;
+   - one `stock_receipt_movements` row per accepted line (base-unit quantity, wholesale cost, on-hand-before snapshot);
+   - an `INVOICE_CREDIT` supplier payable for `total − paid_now` when that is positive;
+   - timeline events.
+
+   It then marks the proposal `CONFIRMED`. Any failure rolls every part back.
+5. The response is a `ReceiptView`: `receipt_id`, `payable_status` (`POSTED`, `FULLY_PAID_NOW`, `NOT_SUPPLIED`), supplier due before and after, per-line on-hand before and after, and `retail_price_changed: false`. Product rows are never updated.
+
+Replaying the same key returns the same receipt with `idempotent_replay: true`. A different key on an already-confirmed proposal returns `409 PROPOSAL_ALREADY_CONFIRMED`. A unique index allows one posting per `(supplier, normalized invoice number)`. `GET /receipts/{id}` re-reads a receipt.
+
+On-hand stock is now `SUM(physical-count deltas) + SUM(receipt movements)`, and a later physical count computes its delta against that combined figure.
+
+## Quick inward for informal deliveries (v0.9, Phase 4)
+
+`POST /inventory/inward/proposals` takes `{utterance, source_channel: "text"|"voice", idempotency_key}`. Pass the merchant-reviewed transcript from `/speech/transcribe` or typed text. One delivery per request. It never writes stock.
+
+- A deterministic Hinglish/English parser runs first. It extracts an optional supplier phrase (`X se …`, `X ne …`, `from X, …`), splits items on `aur`/`and`/commas, and reads each item as `quantity [unit] product` or `product quantity [unit]`, with digits or common Hindi/English number words. The trailing "received" verbs (`liye`, `aaye`, `mila`, …) mean goods arrived. They do not imply payment.
+- If the deterministic parse fails, optional Gemini assist may return spans. Every quantity, unit, product, and supplier span must appear verbatim in the utterance, then it is re-validated; otherwise the response asks for clarification. Disable it with `MUNIM_INWARD_LLM=0`. Outage or missing key returns a clarification.
+- Spoken prices (`₹`, `rupaye`, `rupees`) are not parsed. The response asks the merchant to add costs in review instead.
+- The response is `{status: "proposal"|"clarification", message, parsed_by, proposal, writes_performed: false}`. The proposal uses the same shape and validation as invoice proposals (`source_kind` `voice_inward`/`text_inward`). A missing unit (for example `10 dahi`) is a blocking `UNIT_MISSING` issue that asks for the unit and lists `unit_options`. It is never assumed. Generic supplier phrases such as “doodh wale” stay an unresolved label.
+- `GET /inventory/inward/proposals/{id}`, `POST …/revise`, `POST …/reject`, and `POST …/confirm` behave as described for invoices. Without a verified `total_paise`, confirm records **stock only** (`payable_status: "NOT_SUPPLIED"`), and a non-zero `paid_now_paise` is rejected. A payable is created only if the merchant revises in a total, selects the supplier, and confirms with an explicit paid-now amount.
+
+## Overdue udhaar reminders with a mock-only outbox (v0.9, Phase 5)
+
+**Eligibility rule:** the customer has a positive derived balance, and the oldest **still-unpaid** credit is at least `reminder_overdue_days` (default 15) calendar days old in the shop timezone (default `Asia/Kolkata`). Repayments are applied FIFO: each repayment settles the oldest open credit first, and a partly repaid credit keeps its original date. This is an overdue rule only. The system has no visit records, and missing UPI activity is never treated as a missed visit.
+
+A customer must also have a merchant-recorded **verified** contact with explicit **opt-in** on a channel, no later opt-out, no active reminder, and no reminder within `reminder_min_interval_days` (default 7).
+
+- `GET /reminders/settings`; `POST /reminders/settings` takes `{timezone, reminder_overdue_days, quiet_hours_start, quiet_hours_end, reminder_min_interval_days, max_mock_sends_per_day, confirmed}`. Defaults: quiet hours 21:00–09:00, 20 mock sends/day. Changes are logged to the timeline.
+- `POST /customers/{id}/reminder-consent` takes `{channel: sms|whatsapp, consent_status: OPTED_IN|OPTED_OUT, contact_value, contact_verified, verification_method, evidence_note, confirmed, idempotency_key}`. Records are append-only; the latest record per channel wins. Opt-in needs a valid Indian mobile number, and a verified contact needs a `verification_method`. Opt-out immediately blocks active reminders on that channel. `GET` returns masked contacts only.
+- `GET /reminders/eligibility/preview?as_of=` is read-only. Per customer with a balance it returns the open credits after FIFO, the oldest unpaid local date, overdue days, `eligible`, and `reasons` (`NOT_YET_OVERDUE`, `NO_CONSENT_RECORDED`, `CONTACT_NOT_VERIFIED`, `OPTED_OUT`, `REMINDER_ALREADY_ACTIVE`, `REMINDED_RECENTLY`).
+- `POST /reminders/eligibility/run?as_of=` creates `PENDING_APPROVAL` reminders for eligible customers and cancels active reminders whose balance is now zero. It is idempotent and scheduler-safe: an active-reminder check plus a unique dedupe key `(customer, oldest open credit, channel, interval cycle)`. It never sends anything. An optional background loop runs it every `MUNIM_REMINDER_SCHEDULER_MINUTES` (default off).
+- `GET /reminders?status=` and `GET /reminders/{id}` return the recipient name, masked contact, channel, outstanding at eligibility and current balance, oldest unpaid date, the reason, the exact `message_preview`, and the full transition history. Every view carries `mock_only: true` and `delivered_to_real_recipient: false`.
+- `POST /reminders/{id}/approve` takes `{confirmed, include_amount (default false), idempotency_key}`. It revalidates that the balance is still positive and consent is still valid, then freezes the neutral message. The amount appears only when `include_amount` is chosen.
+- `POST /reminders/{id}/mock-send` takes `{confirmed, idempotency_key}` and requires `APPROVED_MOCK`. It revalidates again, enforces quiet hours (`409 QUIET_HOURS`) and the daily limit (`429 DAILY_LIMIT`), then asks `MockNotificationProvider` for a `mock_…` ID and records `SENT_MOCK`. No phone or network is contacted. Any other `MUNIM_NOTIFICATION_PROVIDER` value returns `503`; no real adapter exists.
+- `POST /reminders/{id}/mock-delivery-receipt` takes `{outcome: DELIVERED|FAILED, idempotency_key}` and records `DELIVERED_MOCK` or `FAILED_MOCK`. `POST /reminders/{id}/cancel` is merchant cancellation.
+
+State machine: `PENDING_APPROVAL → APPROVED_MOCK → SENT_MOCK → DELIVERED_MOCK | FAILED_MOCK`. `CANCELLED` and `BLOCKED_OPTED_OUT` are reachable before send. Any repayment that brings the balance to zero (manual, auto-allocated, or merchant-allocated mock payment) cancels pending or approved reminders in the same transaction. Each transition is append-only and appears on the timeline without contact data.
+
+When `MUNIM_ADMIN_TOKEN` is set, `run`, `mock-send`, and `mock-delivery-receipt` require the `X-Munim-Admin-Token` header.
+
+Default message (amount omitted): “Hello {name}, our records show an outstanding shop balance. Please contact the shop if you'd like to review it. Reply STOP to stop these reminders.”
+
 ## Explicitly not implemented in v0.5
 
 Live action publication, authentication, and production payment integration. Voice transcription is an input convenience and is not guaranteed to recognize names or spoken amounts correctly; the transcript must be reviewed. The facts-only explanation and command interpretation endpoints do not imply live Paytm connectivity or autonomous writes.

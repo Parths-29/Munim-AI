@@ -354,3 +354,37 @@
 - **Seed:** `seed_demo.py` adds synthetic Sharma Distributors and Gupta Dairy (zero payable) and Amul Taaza (packet) / Dahi (cup) products. Two consecutive runs against a temporary DB produced the same IDs.
 - **Checks:** `python -m pytest -q tests` → 8 passed (temp DB per test; no live providers).
 - **Limitations:** Single demo shop; no authentication. Supplier payments are records only.
+
+### 2026-10-30 — Next phases N2/N3: invoice photo proposals and atomic posting
+
+- **Migration 3:** `product_unit_conversions`, `intake_proposals` (versioned working drafts), append-only `intake_proposal_revisions`, `stock_receipts` (unique per supplier + normalized invoice number), and append-only `stock_receipt_movements`. No existing table was altered; on-hand is now physical-count deltas plus receipt movements.
+- **Intake (N2):** `POST /invoices/proposals` validates the actual image bytes (format sniffing, dimensions, size), calls a pluggable extraction provider (`gemini`/`fake`/`none`), and converts untrusted output to a draft with deterministic money/quantity parsing. Drafts carry per-field confidence, exact product/supplier matching with candidates, unit/conversion resolution, line and invoice arithmetic checks, and duplicate signals. A provider failure returns an empty manual draft. Image bytes are never stored (a test checks that the DB file has no PNG signature).
+- **Posting (N3):** `POST /invoices/proposals/{id}/confirm` requires the current version and content hash, revalidates on the server, requires an explicit `paid_now_paise`, then appends the receipt, movements, `INVOICE_CREDIT` payable, and events in one transaction. An injected failure after the movements and payable were inserted left zero rows in all three tables.
+- **Checks:** `python -m pytest -q tests` → 36 passed (temp DB per test; fake/failing providers only).
+- **Limitations:** Live Gemini vision has not been exercised in this run. The provider path is covered with fakes, and recent live Gemini calls returned 503/timeouts. Quantities are whole numbers in the product's base unit. Proposal drafts are working state (updated in place) with an append-only revision history.
+
+### 2026-10-30 — Next phase N4: quick voice inward
+
+- **Parser:** new `inward_parser.py` parses one delivery deterministically (supplier phrase, multiple items, digits or Hindi/English number words, known unit words). An optional Gemini fallback is accepted only when every span is verbatim in the utterance. Spoken prices trigger clarification instead of parsing.
+- **Flow:** `POST /inventory/inward/proposals` creates a `voice_inward`/`text_inward` proposal that reuses the N2 validation and N3 atomic confirm. The PRD example `Doodh wale se 15 packet Amul Taaza aur 10 dahi liye.` gives two lines: Amul Taaza 15 packet (matched) and dahi 10 with a blocking `UNIT_MISSING` question. The supplier label stays unresolved. After review, confirm adds stock only (`NOT_SUPPLIED`, zero payable rows). Adding a verified total plus supplier creates exactly one `INVOICE_CREDIT`.
+- **Test isolation fix:** the test fixture now blocks all `urllib` network calls and clears the Gemini key in every module that reads it. Before this fix, one earlier Phase 4 run may have sent a synthetic test phrase to Gemini through the local `.env` key. Nothing was persisted from it.
+- **Checks:** `python -m pytest -q tests` → 47 passed with network blocked.
+- **Limitations:** Product names containing `aur`/`and` would be split; the merchant can correct this in review. Quantities must be whole numbers.
+
+### 2026-10-30 — Next phase N5: consent-aware 15-day reminders and mock outbox
+
+- **Migration 4:** `shop_settings`, append-only `customer_contact_consents`, immutable `reminders` (dedupe key unique), and append-only `reminder_transitions` (status = latest transition).
+- **Rule:** positive balance, oldest still-unpaid credit (FIFO repayment allocation) ≥ 15 calendar days old in `Asia/Kolkata`, verified contact, explicit opt-in, no opt-out, no active reminder, outside the minimum interval. No visit inference.
+- **Flow:** preview (read-only) → run (creates `PENDING_APPROVAL`; idempotent) → merchant approve (neutral message; amount only if chosen) → mock send (quiet hours, daily limit, revalidation; `MockNotificationProvider` only) → mock delivery receipt. Full repayment through the ledger or either payment-allocation path cancels pending reminders in the same transaction. Opt-out blocks active reminders. Every transition is on the timeline without contact data, and contacts are masked in all responses.
+- **Safety:** non-`mock` provider configuration returns `503`; there is no real adapter. Optional `MUNIM_ADMIN_TOKEN` guards run/send/receipt. The scheduler loop is off unless `MUNIM_REMINDER_SCHEDULER_MINUTES` is set.
+- **Checks:** `python -m pytest -q tests` → 61 passed, network blocked.
+- **Limitations:** no authentication beyond the optional admin token; single demo shop; message template is English only.
+
+### 2026-10-30 — Next phase N6: integration, migration rehearsal, handoff
+
+- **Migration tests:** a DB built with the original v0 script upgrades through migrations 1–4 with legacy rows byte-identical. Re-running is a no-op, and a deliberately broken migration rolls back fully. Compatibility tests cover health, command fallback, customer ledger, counts/stockouts, and mock payment allocation.
+- **Rehearsal:** the new `backend/scripts/rehearse_next_phases.py` (refuses the default DB) ran on (a) a clean DB and (b) a copy of a DB created by checking out `5bec501` and running its app startup + `seed_demo.py`. Both: invoice receipt `POSTED` with Sharma due 0 → 83,000 paise and an idempotent replay; inward example asked "Which unit is '10 dahi'…" and then posted stock only; reminders not eligible today, eligible at +16 days, created once, rerun created 0. Mock-send returned `QUIET_HOURS` because the run happened in the evening IST, which is correct. Legacy Raju ₹500, Maggi 12, and 9,611 synthetic transactions were preserved, and the original legacy file was untouched.
+- **Live server walk-through:** the runbook PowerShell commands ran against `uvicorn` on a temp DB with the fake provider. Results: draft → READY → receipt POSTED (due 113,000 paise), inward unit question, reminder approved, mock-send `QUIET_HOURS`.
+- **Security:** tracked files contain none of the local credential values (checked by count, values not printed). `.env` is ignored. Log statements emit only error class names. Contacts are masked in responses and absent from events.
+- **Checks:** `python -m pytest -q tests` → 67 passed.
+- **Not verified:** live Gemini vision extraction; mobile/device use of the new endpoints (no UI added by design).

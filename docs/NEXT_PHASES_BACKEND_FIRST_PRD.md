@@ -465,3 +465,15 @@ Claude Code should document a recommendation and proceed with the safe default u
 ## 12. Completion definition
 
 The backend-first roadmap is complete when invoice proposals never write before confirmation; an approved invoice atomically changes both stock and supplier payable once; voice inward correctly handles multiple lines and clarifies ambiguous units; the reminder engine respects 15-day age, FIFO repayment aging, consent, opt-out, and mock-only sending; existing customer/payment/inventory features remain intact; clean and existing SQLite databases upgrade safely; and another developer can run the APIs from the written setup without seeing any secret values.
+
+
+## 13. Implementation status (verified 2026-10-30)
+
+All six phases are implemented on `codex/sarvam-voice-input`, backend only, with the UI unchanged. Evidence: `docs/NEXT_PHASES_AUDIT.md` (acceptance → test map), `docs/NEXT_PHASES_RUNBOOK.md` (setup, rehearsal, API walk-through), `docs/BUILD_LOG.md`, and `docs/contracts/backend-api-v0.md` (v0.9).
+
+- 67 automated tests pass on temporary databases, with all outbound network calls blocked.
+- A clean DB rehearsal and an upgraded copy of a DB created by pre-change commit `5bec501` both pass end to end. On the upgraded copy, existing balances, stock, and synthetic transactions are unchanged.
+- Decisions taken (section 11 defaults): invoice images are processed in memory and never retained (only a SHA-256 digest for duplicate hints). Paid-now is explicit at confirm. Pack conversions are merchant-confirmed. The reminder rule is oldest-unpaid-credit age with FIFO repayment and no visit inference. Notifications are mock-only. Storage remains SQLite.
+- Stock receipts use a new append-only `stock_receipt_movements` table rather than rebuilding `inventory_movements` (its CHECK constraint only allows `PHYSICAL_COUNT`). On-hand is the sum of both tables.
+- `stock_inward` is a dedicated endpoint (`/inventory/inward/proposals`) rather than a new `/commands/interpret` intent, so the mobile client's closed intent union is unaffected.
+- Not verified: live Gemini vision extraction (provider recently returned 503/timeouts), and on-device use of the new APIs (no UI yet).

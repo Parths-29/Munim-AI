@@ -137,6 +137,9 @@ def intake_payment(request: PaymentIntakeCreate) -> PaymentIntakeView:
                         summary=f"Mock payment allocation of {request.amount_paise} paise recorded after exact payer-token match.",
                         idempotency_key=allocation_key,
                     )
+                    from app.services.reminders import cancel_reminders_if_settled  # lazy: avoids import cycle
+
+                    cancel_reminders_if_settled(connection, customer_id)
 
         connection.execute(
             """INSERT INTO payment_events
@@ -258,6 +261,9 @@ def manually_allocate_payment(event_id: str, request: PaymentAllocationCreate) -
             summary=f"Merchant-confirmed payment allocation of {payment['amount_paise']} paise recorded.",
             idempotency_key=ledger_key,
         )
+        from app.services.reminders import cancel_reminders_if_settled  # lazy: avoids import cycle
+
+        cancel_reminders_if_settled(connection, request.customer_id)
     return PaymentAllocationView(
         event_id=event_id, customer_id=request.customer_id, amount_paise=payment["amount_paise"], allocation_entry_id=entry_id,
     )

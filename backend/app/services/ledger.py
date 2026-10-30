@@ -185,6 +185,10 @@ def _post_ledger_entry(request: LedgerWrite, entry_type: str) -> LedgerEntryView
             summary=f"{entry_type.title()} of {request.amount_paise} paise recorded.",
             idempotency_key=request.idempotency_key,
         )
+        if entry_type == "REPAYMENT":
+            from app.services.reminders import cancel_reminders_if_settled  # lazy: avoids import cycle
+
+            cancel_reminders_if_settled(connection, request.customer_id)
     return _entry_view(row)
 
 

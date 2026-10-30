@@ -16,8 +16,13 @@ def temp_db(tmp_path, monkeypatch):
     # Tests must never reach live providers even if a developer has local keys.
     for name in ("GEMINI_API_KEY", "SARVAM_API_KEY", "MUNIM_ADMIN_TOKEN", "MUNIM_INVOICE_PROVIDER", "MUNIM_INWARD_LLM"):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr("app.services.explainer._get_api_key", lambda: None)
-    monkeypatch.setattr("app.services.command_nlp._get_api_key", lambda: None)
+    for target in ("explainer", "command_nlp", "inward_parser", "invoice_extraction"):
+        monkeypatch.setattr(f"app.services.{target}._get_api_key", lambda: None)
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("Tests must not make outbound network calls.")
+
+    monkeypatch.setattr("urllib.request.urlopen", no_network)
     database.initialize_database()
     return path
 
