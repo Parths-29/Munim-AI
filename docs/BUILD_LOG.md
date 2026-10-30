@@ -235,3 +235,11 @@
 - **Branch/commit:** `codex/sarvam-voice-input`, commit `63e6bff` (`fix: trim punctuation from voice customer names`), pushed to `origin`.
 - **Checks:** Mobile TypeScript typecheck passed; `git diff --check` passed.
 - **Next:** Retry a read-only voice command first. Confirm the editable transcript is clean and the customer lookup resolves before trying a write command; any ledger change still requires explicit confirmation.
+
+### 2026-10-30 — Current delivery phases reconciled with implementation
+
+- **Goal:** Make the remaining work clear after completing the main backend and mobile logic slices.
+- **Change:** Replaced the archived five-phase draft with a live delivery tracker in `docs/HACKATHON_EXECUTION_PLAN.md`: merchant command/ledger, shop memory, mock payment reconciliation, merchant growth brief/action, and integrated demo readiness. Each phase now has an explicit status and evidence-based exit gate. Plan commit `7f46bff` is pushed to `codex/sarvam-voice-input`.
+- **Current phase:** Phase 5, integrated demo readiness. The immediate acceptance item is one clean read-only voice command after the punctuation fix; a voice-originated write has not yet been confirmed in the local demo database.
+- **Limitations:** Gemini is still unauthenticated and the app uses deterministic fallback; MongoDB is not integrated into this SQLite prototype; no real Paytm feed is connected.
+- **Next:** Finish the voice acceptance gate, then rehearse the remaining flows against a clean synthetic seed and record any failures as small follow-up tasks.
