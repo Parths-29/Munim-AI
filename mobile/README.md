@@ -18,6 +18,7 @@
    - If a credit customer is not found, the preview says that confirmation will create that exact customer and post the credit. Missing repayment/balance customers and missing products are not created automatically.
    - Stockout is recorded as an observation; on-hand quantity stays unchanged until a physical count is confirmed.
    - This command parser is a narrow demo rule set, not an LLM command parser. The separate facts explainer can use Gemini with deterministic fallback.
+   - Voice button records up to 20 seconds, sends the clip to the backend for Sarvam transliteration, and places the transcript in the editable input. The merchant reviews and taps send; ledger writes still show the existing preview and require confirmation. Audio is removed from the app cache after transcription.
 
 2. **Payment Review (`PaymentReviewScreen`):**
    - Lists unmatched or review-required successful mock payments (`GET /payments/review`).
@@ -62,7 +63,7 @@
 git clone https://github.com/Parths-29/Munim-AI.git
 cd Munim-AI
 git fetch origin
-git switch --track origin/codex/merchant-command-flow
+git switch --track origin/codex/sarvam-voice-input
 
 # 2. Enter the mobile directory
 cd mobile

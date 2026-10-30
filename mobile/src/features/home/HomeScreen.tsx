@@ -17,7 +17,7 @@
  * - AI explanation is server-side, facts-only validated with deterministic fallback.
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -30,6 +30,8 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
+import * as FileSystem from 'expo-file-system/legacy';
 import { InfoBanner, SyntheticDataPill } from '@/components/InfoBanner';
 import {
   resolveCustomer,
@@ -46,6 +48,7 @@ import {
   fetchBriefExplanation,
   approveMockAction,
   fetchLatestMockAction,
+  transcribeMerchantAudio,
   FactsResponse,
   BriefExplanationResponse,
   MockActionResponse,
@@ -68,6 +71,7 @@ interface HistoryEntry {
 
 interface PendingCommand {
   commandId: string;
+  sourceChannel: 'text' | 'voice';
   intent: MerchantCommandIntent;
   entityQuery: string;
   amountPaise?: number;
@@ -105,6 +109,7 @@ export default function HomeScreen() {
 
   // Copilot text state
   const [input, setInput] = useState('');
+  const [inputSourceChannel, setInputSourceChannel] = useState<'text' | 'voice'>('text');
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeCustomerId, setActiveCustomerId] = useState<string | null>(null);
@@ -119,6 +124,15 @@ export default function HomeScreen() {
   const [aiExplanation, setAiExplanation] = useState<BriefExplanationResponse | null>(null);
   const [mockAction, setMockAction] = useState<MockActionResponse | null>(null);
   const approvalKeyRef = useRef<string | null>(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(audioRecorder);
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [voiceNotice, setVoiceNotice] = useState('Mic audio is sent to Sarvam for transcription. Munim does not retain the recording; review the transcript before sending.');
+  const voiceStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (voiceStopTimerRef.current) clearTimeout(voiceStopTimerRef.current);
+  }, []);
 
   // Trigger "Aaj kaisa raha?" insight slice + AI explanation
   const handleLoadInsightsBrief = useCallback(async () => {
@@ -159,6 +173,54 @@ export default function HomeScreen() {
       Alert.alert('Could Not Record Mock Approval', message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const stopVoiceRecording = async () => {
+    if (voiceStopTimerRef.current) {
+      clearTimeout(voiceStopTimerRef.current);
+      voiceStopTimerRef.current = null;
+    }
+    setVoiceBusy(true);
+    setVoiceNotice('Transcribing your short recording…');
+    try {
+      await audioRecorder.stop();
+      const uri = audioRecorder.uri;
+      if (!uri) throw new Error('No audio file was created. Please try again.');
+      const result = await transcribeMerchantAudio(uri);
+      if (!result.transcript.trim()) throw new Error('No speech was detected. Please try again or type the request.');
+      setInput(result.transcript.trim());
+      setInputSourceChannel('voice');
+      const detectedLanguage = result.language_code ? ` (${result.language_code})` : '';
+      setVoiceNotice(`Transcript ready${detectedLanguage}. Review it, then tap send. Nothing is recorded until you confirm the next preview.`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setVoiceNotice('Voice transcription failed. You can type the request instead.');
+      Alert.alert('Voice Input Unavailable', message);
+    } finally {
+      const uri = audioRecorder.uri;
+      if (uri) await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => undefined);
+      setVoiceBusy(false);
+    }
+  };
+
+  const startVoiceRecording = async () => {
+    if (loading || voiceBusy || recorderState.isRecording) return;
+    try {
+      const permission = await AudioModule.requestRecordingPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Microphone Permission Needed', 'Allow microphone access to dictate a short merchant request.');
+        return;
+      }
+      await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+      setVoiceNotice('Recording… tap the microphone to stop. Maximum 20 seconds.');
+      voiceStopTimerRef.current = setTimeout(() => { void stopVoiceRecording(); }, 20_000);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setVoiceNotice('Could not start microphone recording. Type your request instead.');
+      Alert.alert('Could Not Start Recording', message);
     }
   };
 
@@ -277,12 +339,13 @@ export default function HomeScreen() {
 
   const handlePromptPress = (prompt: string) => {
     setInput(prompt);
+    setInputSourceChannel('text');
     if (prompt.toLowerCase().includes('aaj kaisa raha')) {
       handleLoadInsightsBrief();
     }
   };
 
-  const handleRunMerchantCommand = async (utterance: string) => {
+  const handleRunMerchantCommand = async (utterance: string, sourceChannel: 'text' | 'voice' = 'text') => {
     const parsed = parseMerchantCommand(utterance);
     setPendingCommand(null);
     setCommandFeedback(null);
@@ -306,6 +369,7 @@ export default function HomeScreen() {
         if (productResolution.status === 'AMBIGUOUS') {
           setPendingCommand({
             commandId,
+            sourceChannel,
             intent: 'stockout',
             entityQuery: parsed.productQuery,
             productMatches: productResolution.matches,
@@ -332,6 +396,7 @@ export default function HomeScreen() {
         const stock = await fetchProductStock(product.product_id);
         setPendingCommand({
           commandId,
+          sourceChannel,
           intent: 'stockout',
           entityQuery: parsed.productQuery,
           product,
@@ -352,10 +417,12 @@ export default function HomeScreen() {
       if (resolution.status === 'AMBIGUOUS') {
         setPendingCommand({
           commandId,
+          sourceChannel,
           intent: parsed.intent,
           entityQuery: parsed.customerQuery,
           amountPaise: 'amountPaise' in parsed ? parsed.amountPaise : undefined,
           matches: resolution.matches,
+          sourceUtterance: utterance,
           createCustomerOnConfirm: false,
         });
         setCommandFeedback({
@@ -370,10 +437,12 @@ export default function HomeScreen() {
         if (parsed.intent === 'credit') {
           setPendingCommand({
             commandId,
+            sourceChannel,
             intent: parsed.intent,
             entityQuery: parsed.customerQuery,
             amountPaise: parsed.amountPaise,
             currentBalancePaise: 0,
+            sourceUtterance: utterance,
             createCustomerOnConfirm: true,
           });
           setCommandFeedback({
@@ -408,11 +477,13 @@ export default function HomeScreen() {
 
       setPendingCommand({
         commandId,
+        sourceChannel,
         intent: parsed.intent,
         entityQuery: parsed.customerQuery,
         amountPaise: parsed.amountPaise,
         customer,
         currentBalancePaise: balance.balance_due_paise,
+        sourceUtterance: utterance,
         createCustomerOnConfirm: false,
       });
       setCommandFeedback({
@@ -518,7 +589,7 @@ export default function HomeScreen() {
           idempotency_key: `stockout_${command.commandId}`,
           confirmed: true,
           source_utterance: command.sourceUtterance,
-          source_channel: 'text',
+          source_channel: command.sourceChannel,
         });
         setPendingCommand(null);
         setCommandFeedback({
@@ -561,6 +632,8 @@ export default function HomeScreen() {
             aliases: [command.entityQuery],
             confirmed: true,
             idempotency_key: `customer_${command.commandId}`,
+            source_utterance: command.sourceUtterance,
+            source_channel: command.sourceChannel,
           })
         : null);
       if (!customer) throw new Error('Choose an exact customer before recording this command.');
@@ -571,6 +644,8 @@ export default function HomeScreen() {
         source_event_id: `event_${command.commandId}`,
         idempotency_key: `ledger_${command.commandId}`,
         confirmed: true,
+        source_utterance: command.sourceUtterance,
+        source_channel: command.sourceChannel,
       };
       const result = command.intent === 'credit'
         ? await postCredit(request)
@@ -616,6 +691,7 @@ export default function HomeScreen() {
     };
     setHistory((prev) => [entry, ...prev]);
     setInput('');
+    setInputSourceChannel('text');
     setCommandFeedback(null);
     setPendingCommand(null);
 
@@ -623,8 +699,8 @@ export default function HomeScreen() {
       handleLoadInsightsBrief();
       return;
     }
-    await handleRunMerchantCommand(trimmed);
-  }, [input, loading, handleLoadInsightsBrief, handleRunMerchantCommand]);
+    await handleRunMerchantCommand(trimmed, inputSourceChannel);
+  }, [input, inputSourceChannel, loading, handleLoadInsightsBrief, handleRunMerchantCommand]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -693,7 +769,7 @@ export default function HomeScreen() {
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
             <SyntheticDataPill />
 
-            <InfoBanner text="Voice STT and live Paytm servers are not connected. Showing deterministic backend memory & insights." />
+            <InfoBanner text="Voice transcripts use Sarvam when configured and always go through merchant review. Live Paytm servers are not connected." />
 
             {/* Quick Demo Prompts */}
             <Text style={styles.sectionLabel}>Tap a demo prompt:</Text>
@@ -1095,11 +1171,22 @@ export default function HomeScreen() {
 
           {/* Bottom Command Input */}
           <View style={styles.inputBar}>
+            {!!voiceNotice && <Text style={styles.voiceNotice}>{voiceNotice}</Text>}
+            <View style={styles.inputRow}>
+              <TouchableOpacity
+                style={[styles.micBtn, recorderState.isRecording && styles.micBtnActive]}
+                onPress={recorderState.isRecording ? stopVoiceRecording : startVoiceRecording}
+                disabled={loading || voiceBusy}
+                accessibilityLabel={recorderState.isRecording ? 'Stop voice recording' : 'Start voice recording'}
+              >
+                {voiceBusy ? <ActivityIndicator size="small" color="#0f3460" /> :
+                  <Ionicons name={recorderState.isRecording ? 'stop' : 'mic-outline'} size={19} color={recorderState.isRecording ? '#ffffff' : '#0f3460'} />}
+              </TouchableOpacity>
               <TextInput
               style={styles.textInput}
               value={input}
-              onChangeText={setInput}
-              editable={!loading}
+              onChangeText={(value) => { setInput(value); setInputSourceChannel('text'); }}
+              editable={!loading && !voiceBusy}
               placeholder="Try udhaar, jama, balance, or 'Aaj kaisa raha?'"
               placeholderTextColor="#9aa0a6"
               returnKeyType="send"
@@ -1108,10 +1195,11 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={[styles.sendBtn, !input.trim() && styles.sendBtnDisabled]}
               onPress={handleSubmitText}
-              disabled={!input.trim() || loading}
+              disabled={!input.trim() || loading || voiceBusy}
             >
               <Ionicons name="send" size={18} color="#ffffff" />
             </TouchableOpacity>
+            </View>
           </View>
         </View>
       )}
@@ -1474,13 +1562,34 @@ const styles = StyleSheet.create({
   historyText: { fontSize: 13, color: '#212529', flex: 1 },
   historyTime: { fontSize: 11, color: '#9aa0a6', marginLeft: 8 },
   inputBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderTopWidth: 1,
     borderTopColor: '#dee2e6',
     backgroundColor: '#ffffff',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  voiceNotice: {
+    fontSize: 10,
+    color: '#495057',
+    lineHeight: 14,
+    marginBottom: 5,
+    paddingHorizontal: 3,
+  },
+  micBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#e8f0fe',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  micBtnActive: {
+    backgroundColor: '#dc3545',
   },
   textInput: {
     flex: 1,

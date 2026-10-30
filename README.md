@@ -57,14 +57,12 @@ The larger KiranaOS product vision includes delivery, supplier workflows, offlin
 
 ## Build status and next steps
 
-1. Confirm the repository collaborators can access the project and agree to the PRD scope.
-2. Implement a reproducible synthetic data generator and define the transaction schema.
-3. Implement and validate deterministic analytics before adding an LLM.
-4. Build the merchant-facing dashboard and evidence panel.
-5. Add the grounded explanation and voice path, keeping text input as a fallback.
-6. Add the mocked approval/action and outcome-comparison flow.
-7. Integrate the fraud model only after a clean run and a clear explanation of its research limitations.
-8. Rehearse a short end-to-end demo with one planted scenario and an honest limitations slide.
+1. Run the current product branch on the demo phone and confirm LAN access to the backend.
+2. Verify Sarvam transcription with the team's backend key and a short Hindi/Hinglish recording; typed input remains available.
+3. Rehearse one voice/text request through transcript review, command preview, merchant confirmation, and the saved action card.
+4. Check the persisted action and scheduled observation window after restarting the app.
+5. Integrate the fraud model only after a clean run and a clear explanation of its research limitations.
+6. Rehearse a short end-to-end demo with one planted scenario and an honest limitations slide.
 
 For current product requirements, open [docs/KIRANAOS_HACKATHON_PRD.md](docs/KIRANAOS_HACKATHON_PRD.md). For continuously coordinated work, branch ownership, and the Git/PR loop, open [docs/CONTINUOUS_COLLABORATION.md](docs/CONTINUOUS_COLLABORATION.md). [docs/PRD.md](docs/PRD.md), [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md), and [docs/HACKATHON_EXECUTION_PLAN.md](docs/HACKATHON_EXECUTION_PLAN.md) preserve earlier iterations and are not the current workflow.
 

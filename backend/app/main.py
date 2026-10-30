@@ -11,6 +11,7 @@ from app.api.insights import router as insights_router
 from app.api.inventory import router as inventory_router
 from app.api.ledger import router as ledger_router
 from app.api.payments import router as payments_router
+from app.api.speech import router as speech_router
 from app.services.database import connect, initialize_database
 from app.services.synthetic_data import seed_synthetic_transactions
 
@@ -31,6 +32,7 @@ app = FastAPI(
 
 app.include_router(health_router)
 app.include_router(actions_router)
+app.include_router(speech_router)
 app.include_router(insights_router)
 app.include_router(inventory_router)
 app.include_router(payments_router)

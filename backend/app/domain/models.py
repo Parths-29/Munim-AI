@@ -217,6 +217,13 @@ class MockActionView(StrictModel):
     outcome_note: str
 
 
+class SpeechTranscriptionView(StrictModel):
+    transcript: str
+    language_code: str | None = None
+    request_id: str | None = None
+    provider: Literal["sarvam"] = "sarvam"
+
+
 class PayerMappingCreate(StrictModel):
     payer_token: str = Field(min_length=1, max_length=100)
     customer_id: str = Field(min_length=1, max_length=100)

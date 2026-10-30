@@ -40,6 +40,8 @@ export interface CreateCustomerRequest {
   aliases: string[];
   confirmed: boolean;
   idempotency_key: string;
+  source_utterance?: string;
+  source_channel?: 'text' | 'voice' | 'provider_mock' | 'system';
 }
 
 export type CustomerResolveStatus = 'RESOLVED' | 'AMBIGUOUS' | 'NOT_FOUND';
@@ -85,6 +87,8 @@ export interface LedgerEntryRequest {
   source_event_id: string;
   idempotency_key: string;
   confirmed: boolean;
+  source_utterance?: string;
+  source_channel?: 'text' | 'voice' | 'provider_mock' | 'system';
 }
 
 export interface LedgerEntryResponse {
@@ -478,5 +482,30 @@ export async function approveMockAction(req: ApproveMockActionRequest): Promise<
 export async function fetchLatestMockAction(persona: Persona = 'kirana'): Promise<MockActionResponse | null> {
   const res = await fetch(`${API_BASE_URL}/actions/latest?persona=${encodeURIComponent(persona)}`);
   if (!res.ok) throw new Error(`Fetch latest mock action failed with HTTP ${res.status}`);
+  return res.json();
+}
+
+export interface SpeechTranscriptionResponse {
+  transcript: string;
+  language_code: string | null;
+  request_id: string | null;
+  provider: 'sarvam';
+}
+
+export async function transcribeMerchantAudio(uri: string): Promise<SpeechTranscriptionResponse> {
+  const form = new FormData();
+  form.append('file', {
+    uri,
+    name: 'merchant-voice.m4a',
+    type: 'audio/mp4',
+  } as unknown as Blob);
+  const res = await fetch(`${API_BASE_URL}/speech/transcribe`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail ?? `Voice transcription failed with HTTP ${res.status}`);
+  }
   return res.json();
 }
