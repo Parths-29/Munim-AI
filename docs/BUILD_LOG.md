@@ -388,3 +388,9 @@
 - **Security:** tracked files contain none of the local credential values (checked by count, values not printed). `.env` is ignored. Log statements emit only error class names. Contacts are masked in responses and absent from events.
 - **Checks:** `python -m pytest -q tests` → 67 passed.
 - **Not verified:** live Gemini vision extraction; mobile/device use of the new endpoints (no UI added by design).
+
+### 2026-10-31 — Growth phase N7: bahi-khata notebook scanner
+
+- Added `/ledger-pages` scan → draft → revise / voice-correction → atomic confirm. Notebook dates are kept as `ledger_entries.occurred_at` (additive migration 5) and drive FIFO reminder aging. Devanagari/Gujarati digits and udhaar/jama marker words are parsed deterministically. Names are matched exactly in either script; customers are created only on merchant choice.
+- **Checks:** `python -m pytest -q tests` → 74 passed (network blocked). The legacy-upgrade test now also asserts that new columns are NULL on old rows.
+- **Plan:** see `docs/GROWTH_PHASES.md` for N7–N12.

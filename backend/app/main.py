@@ -19,6 +19,7 @@ from app.api.inventory import router as inventory_router
 from app.api.invoices import router as invoices_router
 from app.api.inward import router as inward_router
 from app.api.ledger import router as ledger_router
+from app.api.ledger_pages import router as ledger_pages_router
 from app.api.payments import router as payments_router
 from app.api.reminders import router as reminders_router
 from app.api.speech import router as speech_router
@@ -93,3 +94,4 @@ app.include_router(suppliers_router)
 app.include_router(invoices_router)
 app.include_router(inward_router)
 app.include_router(reminders_router)
+app.include_router(ledger_pages_router)

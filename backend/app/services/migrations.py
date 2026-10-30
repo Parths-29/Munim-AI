@@ -258,6 +258,52 @@ CREATE INDEX IF NOT EXISTS ix_reminder_transitions ON reminder_transitions(remin
 """ + _append_only("reminder_transitions", "reminder transitions")
 
 
+LEDGER_PAGES = """
+-- When the money actually changed hands (e.g. the date written in a notebook).
+-- NULL means "same as created_at". Additive column; existing rows are untouched.
+ALTER TABLE ledger_entries ADD COLUMN occurred_at TEXT;
+
+CREATE TABLE IF NOT EXISTS ledger_page_proposals (
+    proposal_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('NEEDS_REVIEW', 'READY', 'CONFIRMED', 'REJECTED', 'EXPIRED')),
+    version INTEGER NOT NULL CHECK (version >= 1),
+    content_hash TEXT NOT NULL,
+    draft_json TEXT NOT NULL,
+    extraction_json TEXT NOT NULL,
+    image_sha256 TEXT,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    posted_batch_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ledger_page_revisions (
+    revision_id TEXT PRIMARY KEY,
+    proposal_id TEXT NOT NULL REFERENCES ledger_page_proposals(proposal_id),
+    version INTEGER NOT NULL,
+    content_hash TEXT NOT NULL,
+    draft_json TEXT NOT NULL,
+    actor TEXT NOT NULL CHECK (actor IN ('extraction', 'merchant', 'merchant_voice')),
+    created_at TEXT NOT NULL,
+    UNIQUE (proposal_id, version)
+);
+""" + _append_only("ledger_page_revisions", "ledger page revisions") + """
+CREATE TABLE IF NOT EXISTS ledger_page_postings (
+    batch_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    proposal_id TEXT NOT NULL UNIQUE REFERENCES ledger_page_proposals(proposal_id),
+    proposal_version INTEGER NOT NULL,
+    content_hash TEXT NOT NULL,
+    entry_count INTEGER NOT NULL CHECK (entry_count > 0),
+    customers_created INTEGER NOT NULL CHECK (customers_created >= 0),
+    idempotency_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+);
+""" + _append_only("ledger_page_postings", "ledger page postings")
+
+
 def _baseline() -> str:
     from app.services.database import SCHEMA
 
@@ -270,6 +316,7 @@ MIGRATIONS: list[tuple[int, str, object]] = [
     (2, "suppliers_and_payables", SUPPLIERS),
     (3, "intake_proposals_and_stock_receipts", INTAKE_AND_RECEIPTS),
     (4, "reminder_consent_and_outbox", REMINDERS),
+    (5, "bahi_khata_ledger_pages", LEDGER_PAGES),
 ]
 
 

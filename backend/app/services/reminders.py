@@ -235,8 +235,9 @@ def open_credits(connection: sqlite3.Connection, customer_id: str, zone: ZoneInf
     """Credits still (partly) unpaid after applying every repayment to the oldest open credit first."""
     queue: list[dict] = []
     for row in connection.execute(
-        """SELECT entry_id, entry_type, amount_paise, created_at FROM ledger_entries
-           WHERE shop_id = ? AND customer_id = ? AND status = 'POSTED' ORDER BY created_at, rowid""",
+        """SELECT entry_id, entry_type, amount_paise, COALESCE(occurred_at, created_at) AS created_at FROM ledger_entries
+           WHERE shop_id = ? AND customer_id = ? AND status = 'POSTED'
+           ORDER BY COALESCE(occurred_at, created_at), rowid""",
         (DEMO_SHOP_ID, customer_id),
     ):
         if row["entry_type"] == "CREDIT":

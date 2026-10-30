@@ -38,7 +38,11 @@ def test_legacy_database_upgrades_in_place(tmp_path, monkeypatch, client):
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert versions == [version for version, _, _ in MIGRATIONS]
     assert {"suppliers", "stock_receipts", "reminders", "reminder_transitions"} <= tables
-    assert dump(path, legacy_tables) == before
+    after = dump(path, legacy_tables)
+    for table in legacy_tables:
+        # Original values unchanged; additive columns (e.g. ledger_entries.occurred_at) are NULL.
+        assert [row[:len(before[table][0])] for row in after[table]] == before[table]
+        assert all(value is None for row in after[table] for value in row[len(before[table][0]):])
 
     assert client.get("/ledger/customers/cust_legacy/balance").json()["balance_due_paise"] == 50000
     assert client.get("/inventory/products/p1/stock").json()["on_hand_quantity"] == 12
@@ -56,5 +60,5 @@ def test_failed_migration_rolls_back(tmp_path, monkeypatch):
     except sqlite3.OperationalError:
         pass
     with sqlite3.connect(path) as connection:
-        assert connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 4
+        assert connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == MIGRATIONS[-1][0]
         assert connection.execute("SELECT name FROM sqlite_master WHERE name = 'half_done'").fetchone() is None
