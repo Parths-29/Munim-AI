@@ -5,10 +5,10 @@
 ## Current status snapshot
 
 **Last checked:** 30 October 2026  
-**Active work branch:** `codex/explainer-hardening` (latest code change: `85526fb`; subsequent commits update this log)
-**Base:** `origin/main` at `ea21a1f`
-**Working tree:** clean at the last local check.
-**Merge status:** Antigravity’s explainer work is merged into `main` in PR #6. The hardening changes (`85526fb`) and handoff docs (`6ce832d`) are pushed to this branch and are not in `main`; a PR has not yet been opened for them. A separate remote branch, `antigravity/handoff-audit` at `b813ac6`, adds a longer audit version of this log only.
+**Active work branch:** `codex/merchant-command-flow`, started from `origin/main` at `5577f98`
+**Base:** `origin/main` at `5577f98`
+**Working tree:** product changes are in progress on this branch.
+**Merge status:** explainer hardening and the follow-up build-log updates are merged into `main` through PRs #7, #8, and #9. The current branch adds the text-command workflow described in the latest milestone.
 
 ### Product and scope
 
@@ -34,9 +34,10 @@
     - `POST /insights/explain` — server-side facts-only AI explanation with strict number validation and deterministic fallback (on `codex/explainer-hardening` and `antigravity/handoff-audit`).
     - `POST /payments/intake`, `GET /payments/review`, `POST /payments/{id}/allocate`, `POST /payments/mappings` — synthetic payment intake, review queue for unmatched payments, manual allocation with merchant confirmation, and payer token mappings.
 - **Mobile (`mobile/`):**
-  - Expo (SDK 52), React Native, TypeScript app under `mobile/`.
+  - Expo SDK 58, React Native 0.88, and TypeScript app under `mobile/`.
   - Tabbed interface: Copilot, Pay Review, Inventory, Timeline, Insights.
   - "Aaj kaisa raha?" brief: queries `GET /insights/facts` and `POST /insights/explain`, displaying evidence chips, caveats, comparison periods, and merchant-controlled mock action approval.
+  - Copilot text box: limited deterministic parser for credit, repayment, balance, and stockout commands, with exact entity resolution and confirmation previews.
   - Payer review flow: displays unmatched synthetic payments and allows merchant-confirmed allocation to known customers.
   - Inventory flow: stock lookup, stockout observation recording, physical inventory count reconciliation.
 - **Required Environment Variables (redacted):**
@@ -50,11 +51,12 @@
 
 ### Verification ledger
 
-- **Verified from Git at this snapshot:** remote refs fetched; `main` is `12f8491`; `codex/explainer-hardening` is `6ce832d`; the branch is pushed and the local working tree was clean.
+- **Verified from Git at this snapshot:** remote refs fetched; `main` is `5577f98`; `codex/merchant-command-flow` starts at that commit.
 - **Verified by Codex:** `git diff --check` passed before the hardening commit; see the latest verification milestone below for runtime/mobile checks on the current branch.
 - **Reported by Antigravity, not rerun on the hardening branch:** TypeScript typecheck and Android Expo export passed for the explainer implementation; fallback endpoint returned valid JSON; Gemini requests reportedly timed out or returned 503.
 - **Reported in the later Antigravity audit:** mobile typecheck and Android Expo export passed; direct Gemini call timed out after about 15 seconds. The audit described backend facts/explainer as passing, but its supplied command history showed earlier pytest, TestClient, and direct Python smoke attempts exiting with code 1 without the later successful command/output. Codex subsequently reproduced the backend fallback path through local HTTP; details are below.
-- **Verified by Codex on the current hardening branch:** backend facts/explainer HTTP smoke with a temporary SQLite database and Gemini disabled; mobile typecheck; Android export. See the latest milestone for exact outcomes.
+- **Verified by Codex on the hardening branch:** backend facts/explainer HTTP smoke with temporary SQLite and Gemini disabled; mobile typecheck; Android export.
+- **Verified by Codex on the current product branch:** parser examples, ledger arithmetic, stockout observation behavior, mobile typecheck, and Android export. See latest milestone for exact outcomes.
 - **Still not verified:** live Gemini response and full physical-phone-to-laptop demo.
 
 ## How to resume on another laptop
@@ -63,10 +65,9 @@
    ```bash
    git fetch origin --prune
    ```
-2. Check out the current audit / hardening branch:
+2. Check out the current product branch:
    ```bash
-   git checkout antigravity/handoff-audit
-   # or git checkout codex/explainer-hardening
+   git checkout codex/merchant-command-flow
    ```
 3. Read this file, the [PRD](KIRANAOS_HACKATHON_PRD.md), the [execution plan](HACKATHON_EXECUTION_PLAN.md), and the [API contract](contracts/backend-api-v0.md).
 4. Run `git status` before making edits; never force-push to shared branches.
@@ -133,14 +134,7 @@
 - **Branch/commit:** `codex/explainer-hardening` at `85526fb` and `6ce832d`.
 - **Checks:** `git diff --check` passed.
 - **Limitations:** Live Gemini request timed out in local environment; fallback engaged as expected.
-- **Next:** Comprehensive verification of backend and mobile builds, updating cumulative log.
-
-- **Goal:** use POST semantics and constrain model output to safer bounds.
-- **Changes:** `POST /insights/explain` accepts `BriefExplanationRequest`; mobile sends JSON; the model selects a permitted action type while the backend supplies fixed action copy; negative-number validation no longer accepts absolute-value substitutions; Gemini API key is sent in `x-goog-api-key`; upstream exception details are sanitized.
-- **Branch/commit:** `codex/explainer-hardening` at `85526fb`, based on `origin/main` `12f8491`; pushed, no PR opened yet.
-- **Checks:** `git diff --check` passed before commit. Runtime and mobile build checks have not been rerun after these changes.
-- **Limitations:** number validation checks whether values occur somewhere in the facts collection, not whether each sentence ties each value to the correct fact ID. Treat it as a guardrail, not proof of semantic correctness.
-- **Next:** run backend smoke checks, mobile typecheck/export, then open a PR if checks pass.
+- **Outcome:** hardening code subsequently merged through PR #7; see the later verification milestone.
 
 ### 2026-10-30 — Follow-up audit report received
 
@@ -148,7 +142,7 @@
 - **Changes:** Antigravity pushed `antigravity/handoff-audit` at `b813ac6`, based on `codex/explainer-hardening` at `6ce832d`. The remote commit changes only `docs/BUILD_LOG.md`; it does not add application code.
 - **Checks reported:** mobile TypeScript check and Android export passed; Gemini direct call timed out; the report claims backend fact/explainer/fallback behavior passed.
 - **Evidence gap:** the command history supplied with that report also lists backend pytest, TestClient smoke, and direct Python smoke attempts exiting with code 1. The report gives no exact successful backend command or output to reconcile those failures. Codex therefore records backend verification as unverified.
-- **Outcome:** Codex later ran a reproducible local HTTP smoke check successfully; see the following milestone. Keep using `codex/explainer-hardening` as the working branch; do not merge the audit-only branch as the code PR by default.
+- **Outcome:** Codex later ran a reproducible local HTTP smoke check successfully; see the following milestone. PR #9 later merged the corrected verification log into `main`.
 
 ### 2026-10-30 — Codex backend and mobile verification
 
@@ -159,4 +153,16 @@
 - **Mobile checks:** `npm run typecheck` exited 0. `npx expo export --platform android` exited 0 and bundled 706 modules into Hermes bytecode. **Passed.**
 - **Dependency note:** `npm ci` reported 8 dependency advisories (5 low, 3 high). `npm audit --omit=dev` also exited 1 and identified high-severity transitive advisories in `deepmerge` and `zod` through Expo tooling. The suggested `npm audit fix --force` would downgrade Expo to 51, so no dependency changes were made. The branch does not change `package.json` or the lockfile; assess these existing advisories separately before release.
 - **Limitations:** Gemini live connectivity was deliberately not tested; the fallback was forced so no local key or billable API request was used. Physical-device/LAN demo remains unverified.
-- **Next:** review the branch diff and open a PR for `codex/explainer-hardening`; the dependency advisories are inherited from the current Expo dependency tree and were not introduced by this branch.
+- **Next:** continue product development from updated `main`; the dependency advisories are inherited from the Expo dependency tree and are not changed by the hardening PR.
+
+### 2026-10-30 — Confirmed text-command workflow
+
+- **Goal:** turn the Copilot text box from an utterance log into a bounded merchant workflow.
+- **Changes:** added a deterministic parser for one supported request at a time: credit, repayment, balance lookup, and stockout observation. The Copilot resolves customer/product aliases through existing APIs, lets the merchant choose among ambiguous matches, previews writes, requires explicit confirmation, uses idempotency keys, and reports the result. Unsupported or incomplete commands do not write. A missing customer may be created only after confirmation of a new-credit preview; missing repayment customers and products are not created automatically.
+- **Trust boundary:** this is a fixed-rule demo parser, not LLM command understanding. Stockout confirmation records an observation and leaves physical quantity unchanged. All records remain synthetic.
+- **Demo arithmetic:** aligned the quick repayment example with the PRD: ₹500 opening due + ₹50 credit − ₹300 repayment = ₹250 due.
+- **Files:** `mobile/src/features/home/parseMerchantCommand.ts`, `mobile/src/features/home/HomeScreen.tsx`, and `mobile/README.md`.
+- **Branch:** `codex/merchant-command-flow`, based on `origin/main` `5577f98`.
+- **Checks:** parser cases passed for credit, repayment, balance, stockout, mixed-action clarification, and excess decimal places. A local HTTP smoke with temporary SQLite confirmed the balance went from 50000 paise to 55000 after credit and 25000 after repayment; stockout was recorded while on-hand stayed at 12. `npm run typecheck` passed. `npx expo export --platform android` passed and bundled 707 modules.
+- **Limitations:** parser supports a narrow set of Hindi/Hinglish/English phrases and does not support voice or arbitrary natural language. Physical-phone UX remains unverified.
+- **Next:** rehearse the text commands on the demo phone with a seeded synthetic backend and tune the flow from that run.

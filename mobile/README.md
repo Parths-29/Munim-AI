@@ -1,20 +1,23 @@
 # Munim-AI Mobile — KiranaOS Mobile Client
 
-**Owner:** Rachit (mobile UI)  
+**Owner:** Hackathon team
 **Expo SDK:** 58 · **React Native:** 0.88.0 · **TypeScript:** ~5.7.2
 
-> **Scope:** Merchant-facing Expo application connected to the synthetic KiranaOS backend slice (`backend-api-v0.md` / `origin/codex/payment-review`).
+> **Scope:** Merchant-facing Expo application connected to the synthetic KiranaOS backend slice documented in [`docs/contracts/backend-api-v0.md`](../docs/contracts/backend-api-v0.md).
 > All data is strictly synthetic. No connection or access to Paytm live systems is claimed.
 
 ---
 
 ## Features Implemented in Mobile
 
-1. **Copilot (Ledger & Commands):**
-   - Quick customer lookup and derived debt balance query (`GET /customers/resolve`, `GET /ledger/customers/{id}/balance`).
-   - Confirmed credit posting (`POST /ledger/credits`).
-   - Confirmed repayment posting (`POST /ledger/repayments`).
-   - Utterance logging and example command chips.
+1. **Copilot (Ledger & Text Commands):**
+   - A bounded deterministic text parser recognizes one supported request at a time: udhaar, jama, customer balance, or stockout observation.
+   - Example inputs: `Raju bhai ka ₹50 udhaar likh do`, `Raju bhai ka ₹300 jamma kar lo`, `Raju bhai ka balance batao`, and `Maggi khatam ho gaya`.
+   - Customer/product names resolve through exact backend aliases. Ambiguous matches require the merchant to choose; unsupported or incomplete input does not write data.
+   - Credit, repayment, and stockout requests show a preview and require explicit confirmation. Backend writes use idempotency keys.
+   - If a credit customer is not found, the preview says that confirmation will create that exact customer and post the credit. Missing repayment/balance customers and missing products are not created automatically.
+   - Stockout is recorded as an observation; on-hand quantity stays unchanged until a physical count is confirmed.
+   - This command parser is a narrow demo rule set, not an LLM command parser. The separate facts explainer can use Gemini with deterministic fallback.
 
 2. **Payment Review (`PaymentReviewScreen`):**
    - Lists unmatched or review-required successful mock payments (`GET /payments/review`).
@@ -55,16 +58,17 @@
 ## Setup
 
 ```bash
-# 1. Clone the repo and check out the mobile scaffold branch
+# 1. Clone the repo and check out the current product branch
 git clone https://github.com/Parths-29/Munim-AI.git
 cd Munim-AI
-git checkout antigravity/phase-1-mobile-scaffold
+git fetch origin
+git switch --track origin/codex/merchant-command-flow
 
 # 2. Enter the mobile directory
 cd mobile
 
-# 3. Install dependencies
-npm install
+# 3. Install the locked dependencies
+npm ci
 ```
 
 ---
@@ -140,7 +144,8 @@ mobile/
 │   │   └── InfoBanner.tsx  # Reusable banner + synthetic-data pill
 │   ├── features/
 │   │   ├── home/
-│   │   │   └── HomeScreen.tsx  # Main hub, copilot & "Aaj kaisa raha?" brief
+│   │   │   ├── HomeScreen.tsx  # Main hub, command review and business brief
+│   │   │   └── parseMerchantCommand.ts # Bounded, deterministic demo parser
 │   │   ├── insights/
 │   │   │   └── InsightsScreen.tsx  # Business facts & evidence IDs
 │   │   ├── inventory/
@@ -171,6 +176,8 @@ mobile/
 | Sarvam STT / TTS | ❌ Not included (future stretch) |
 | Live Paytm API / processor | ❌ Never claimed (mock UPI intake only) |
 | Customer / Ledger mutations | ✅ Implemented via backend v0.5 |
+| Text commands for udhaar, jama, balance, and stockout | ✅ Limited deterministic parser; confirmation required before writes |
+| LLM command parsing | ❌ Not implemented; the text parser is not presented as AI |
 | Derived balance | ✅ Computed from posted entries only |
 | Stockout observation | ✅ Preserved as observation (no count mutation) |
 | Physical inventory count | ✅ Explicit count delta confirmation |
@@ -185,9 +192,9 @@ mobile/
 
 ## Expo SDK and assumptions
 
-- **Expo SDK 58** is the `latest` tag as of 30 October 2026 (`expo@58.0.21`).
-- **expo-router 4** is the compatible file-based routing library for SDK 58.
-- **React Native 0.77.2** ships with SDK 58.
+- **Expo SDK 58** is pinned at `expo@58.0.21` in the lockfile.
+- **React Native 0.88.0** is pinned in `package.json` for this app.
+- The app currently uses its own tab navigation; `expo-router` is not installed.
 - **New Architecture** is enabled in `app.json` (`newArchEnabled: true`);
   disable it if you encounter issues with older Expo Go builds.
 - The Android `permissions` array in `app.json` is explicitly empty to

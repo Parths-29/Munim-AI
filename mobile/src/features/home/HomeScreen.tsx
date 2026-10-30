@@ -2,7 +2,7 @@
  * HomeScreen — KiranaOS / Munim-AI Mobile Hub
  *
  * Provides tabbed navigation across:
- * 1. Copilot (Voice/text commands, credit/repayment, customer resolve, derived balance,
+ * 1. Copilot (bounded text commands, credit/repayment, customer resolve, derived balance,
  *    and end-to-end "Aaj kaisa raha?" insights brief slice with AI explanation)
  * 2. Pay Review (GET /payments/review & merchant-confirmed manual allocation)
  * 3. Inventory (Stock lookup, stockout observation, physical counts)
@@ -17,7 +17,7 @@
  * - AI explanation is server-side, facts-only validated with deterministic fallback.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -37,11 +37,17 @@ import {
   fetchCustomerBalance,
   postCredit,
   postRepayment,
+  resolveProduct,
+  fetchProductStock,
+  recordStockoutObservation,
+  Customer,
+  Product,
   fetchInsightFacts,
   fetchBriefExplanation,
   FactsResponse,
   BriefExplanationResponse,
 } from '@/api/ledgerClient';
+import { MerchantCommandIntent, parseMerchantCommand } from '@/features/home/parseMerchantCommand';
 import PaymentReviewScreen from '@/features/paymentReview/PaymentReviewScreen';
 import InventoryScreen from '@/features/inventory/InventoryScreen';
 import TimelineScreen from '@/features/timeline/TimelineScreen';
@@ -57,10 +63,36 @@ interface HistoryEntry {
   isInsightQuery?: boolean;
 }
 
+interface PendingCommand {
+  commandId: string;
+  intent: MerchantCommandIntent;
+  entityQuery: string;
+  amountPaise?: number;
+  customer?: Customer;
+  matches?: Customer[];
+  product?: Product;
+  productMatches?: Product[];
+  currentBalancePaise?: number;
+  currentStockQuantity?: number;
+  stockUnit?: string;
+  sourceUtterance?: string;
+  createCustomerOnConfirm: boolean;
+}
+
+interface CommandFeedback {
+  tone: 'info' | 'success' | 'error';
+  title: string;
+  message: string;
+}
+
+function formatRupees(amountPaise: number): string {
+  return `₹${(amountPaise / 100).toFixed(2)}`;
+}
+
 const EXAMPLE_PROMPTS = [
   'Aaj kaisa raha?',
   'Raju bhai ka ₹50 udhaar likh do',
-  'Raju bhai ka ₹30 jamma kar lo',
+  'Raju bhai ka ₹300 jamma kar lo',
   'Raju bhai ka balance batao',
   'Maggi khatam ho gaya',
 ];
@@ -73,8 +105,11 @@ export default function HomeScreen() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeCustomerId, setActiveCustomerId] = useState<string | null>(null);
-  const [customerName] = useState('Raju bhai');
+  const [customerName, setCustomerName] = useState('Raju bhai');
   const [customerBalance, setCustomerBalance] = useState<number | null>(null);
+  const [pendingCommand, setPendingCommand] = useState<PendingCommand | null>(null);
+  const [commandFeedback, setCommandFeedback] = useState<CommandFeedback | null>(null);
+  const commandBusyRef = useRef(false);
 
   // "Aaj kaisa raha?" end-to-end slice state
   const [insightsBrief, setInsightsBrief] = useState<FactsResponse | null>(null);
@@ -177,7 +212,7 @@ export default function HomeScreen() {
     }
   };
 
-  // Quick Action: Repayment ₹30
+  // Quick Action: Repayment ₹300 (matches the PRD's Raju demo arithmetic)
   const handleQuickRepayment = async () => {
     setLoading(true);
     try {
@@ -194,7 +229,7 @@ export default function HomeScreen() {
       }
       const repayRes = await postRepayment({
         customer_id: custId,
-        amount_paise: 3000,
+        amount_paise: 30000,
         source_event_id: `evt_repay_${Date.now()}`,
         idempotency_key: `cmd_repay_${Date.now()}`,
         confirmed: true,
@@ -203,7 +238,7 @@ export default function HomeScreen() {
       setCustomerBalance(bal.balance_due_paise);
       Alert.alert(
         'Repayment Posted Successfully',
-        `₹30.00 repayment posted for ${customerName}.\nRemaining Balance: ₹${(bal.balance_due_paise / 100).toFixed(2)}\nEntry ID: ${repayRes.entry_id}`
+        `₹300.00 repayment posted for ${customerName}.\nRemaining Balance: ₹${(bal.balance_due_paise / 100).toFixed(2)}\nEntry ID: ${repayRes.entry_id}`
       );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -220,7 +255,325 @@ export default function HomeScreen() {
     }
   };
 
-  const handleSubmitText = useCallback(() => {
+  const handleRunMerchantCommand = async (utterance: string) => {
+    const parsed = parseMerchantCommand(utterance);
+    setPendingCommand(null);
+    setCommandFeedback(null);
+
+    if (parsed.status !== 'ready') {
+      setCommandFeedback({
+        tone: parsed.status === 'unsupported' ? 'info' : 'error',
+        title: parsed.status === 'unsupported' ? 'Command Not Supported Yet' : 'Please Clarify',
+        message: parsed.message,
+      });
+      return;
+    }
+
+    if (commandBusyRef.current) return;
+    commandBusyRef.current = true;
+    const commandId = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    setLoading(true);
+    try {
+      if (parsed.intent === 'stockout') {
+        const productResolution = await resolveProduct(parsed.productQuery);
+        if (productResolution.status === 'AMBIGUOUS') {
+          setPendingCommand({
+            commandId,
+            intent: 'stockout',
+            entityQuery: parsed.productQuery,
+            productMatches: productResolution.matches,
+            sourceUtterance: utterance,
+            createCustomerOnConfirm: false,
+          });
+          setCommandFeedback({
+            tone: 'info',
+            title: 'Choose the Exact Product',
+            message: 'I found more than one exact product alias. Choose one before recording the stockout observation.',
+          });
+          return;
+        }
+        if (productResolution.status === 'NOT_FOUND') {
+          setCommandFeedback({
+            tone: 'error',
+            title: 'Product Not Found',
+            message: `No exact product match for “${parsed.productQuery}”. Nothing was recorded. Add or resolve the product first.`,
+          });
+          return;
+        }
+
+        const product = productResolution.matches[0];
+        const stock = await fetchProductStock(product.product_id);
+        setPendingCommand({
+          commandId,
+          intent: 'stockout',
+          entityQuery: parsed.productQuery,
+          product,
+          currentStockQuantity: stock.on_hand_quantity,
+          stockUnit: stock.unit,
+          sourceUtterance: utterance,
+          createCustomerOnConfirm: false,
+        });
+        setCommandFeedback({
+          tone: 'info',
+          title: 'Stockout Observation Preview',
+          message: 'Confirming records what you observed. It does not change the on-hand count.',
+        });
+        return;
+      }
+
+      const resolution = await resolveCustomer(parsed.customerQuery);
+      if (resolution.status === 'AMBIGUOUS') {
+        setPendingCommand({
+          commandId,
+          intent: parsed.intent,
+          entityQuery: parsed.customerQuery,
+          amountPaise: 'amountPaise' in parsed ? parsed.amountPaise : undefined,
+          matches: resolution.matches,
+          createCustomerOnConfirm: false,
+        });
+        setCommandFeedback({
+          tone: 'info',
+          title: 'Choose the Exact Customer',
+          message: 'I found more than one exact alias match. Choose the customer before any balance lookup or ledger write.',
+        });
+        return;
+      }
+
+      if (resolution.status === 'NOT_FOUND') {
+        if (parsed.intent === 'credit') {
+          setPendingCommand({
+            commandId,
+            intent: parsed.intent,
+            entityQuery: parsed.customerQuery,
+            amountPaise: parsed.amountPaise,
+            currentBalancePaise: 0,
+            createCustomerOnConfirm: true,
+          });
+          setCommandFeedback({
+            tone: 'info',
+            title: 'New Customer Preview',
+            message: 'No exact customer match exists. Confirming will create this customer and then post the credit.',
+          });
+        } else {
+          setCommandFeedback({
+            tone: 'error',
+            title: 'Customer Not Found',
+            message: `No exact match for “${parsed.customerQuery}”. Nothing was recorded. Add or resolve the customer first.`,
+          });
+        }
+        return;
+      }
+
+      const customer = resolution.matches[0];
+      const balance = await fetchCustomerBalance(customer.customer_id);
+      setCustomerName(customer.display_name);
+      setActiveCustomerId(customer.customer_id);
+      setCustomerBalance(balance.balance_due_paise);
+
+      if (parsed.intent === 'balance') {
+        setCommandFeedback({
+          tone: 'success',
+          title: `Balance for ${customer.display_name}`,
+          message: `${formatRupees(balance.balance_due_paise)} due across ${balance.entry_count} posted ledger entries.`,
+        });
+        return;
+      }
+
+      setPendingCommand({
+        commandId,
+        intent: parsed.intent,
+        entityQuery: parsed.customerQuery,
+        amountPaise: parsed.amountPaise,
+        customer,
+        currentBalancePaise: balance.balance_due_paise,
+        createCustomerOnConfirm: false,
+      });
+      setCommandFeedback({
+        tone: 'info',
+        title: 'Review Before Recording',
+        message: 'This is a text-parser draft. Check the customer and amount; the ledger will not change until you confirm.',
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setCommandFeedback({
+        tone: 'error',
+        title: 'Could Not Prepare Command',
+        message: `${message} Nothing was recorded.`,
+      });
+    } finally {
+      commandBusyRef.current = false;
+      setLoading(false);
+    }
+  };
+
+  const handleChooseCommandCustomer = async (customer: Customer) => {
+    if (!pendingCommand || commandBusyRef.current) return;
+    const command = pendingCommand;
+    commandBusyRef.current = true;
+    setLoading(true);
+    setCommandFeedback(null);
+    try {
+      const balance = await fetchCustomerBalance(customer.customer_id);
+      setCustomerName(customer.display_name);
+      setActiveCustomerId(customer.customer_id);
+      setCustomerBalance(balance.balance_due_paise);
+
+      if (command.intent === 'balance') {
+        setPendingCommand(null);
+        setCommandFeedback({
+          tone: 'success',
+          title: `Balance for ${customer.display_name}`,
+          message: `${formatRupees(balance.balance_due_paise)} due across ${balance.entry_count} posted ledger entries.`,
+        });
+      } else {
+        setPendingCommand({
+          ...command,
+          customer,
+          matches: undefined,
+          currentBalancePaise: balance.balance_due_paise,
+        });
+        setCommandFeedback({
+          tone: 'info',
+          title: 'Review Before Recording',
+          message: `Selected ${customer.display_name}. Confirm only if this is the right customer and amount.`,
+        });
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setCommandFeedback({ tone: 'error', title: 'Could Not Load Balance', message });
+    } finally {
+      commandBusyRef.current = false;
+      setLoading(false);
+    }
+  };
+
+  const handleChooseCommandProduct = async (product: Product) => {
+    if (!pendingCommand || pendingCommand.intent !== 'stockout' || commandBusyRef.current) return;
+    const command = pendingCommand;
+    commandBusyRef.current = true;
+    setLoading(true);
+    setCommandFeedback(null);
+    try {
+      const stock = await fetchProductStock(product.product_id);
+      setPendingCommand({
+        ...command,
+        product,
+        productMatches: undefined,
+        currentStockQuantity: stock.on_hand_quantity,
+        stockUnit: stock.unit,
+      });
+      setCommandFeedback({
+        tone: 'info',
+        title: 'Stockout Observation Preview',
+        message: `Selected ${product.name}. Confirm only if this is the right product. The on-hand count will stay unchanged.`,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setCommandFeedback({ tone: 'error', title: 'Could Not Load Product Stock', message });
+    } finally {
+      commandBusyRef.current = false;
+      setLoading(false);
+    }
+  };
+
+  const handleConfirmCommand = async () => {
+    if (!pendingCommand || pendingCommand.matches?.length || pendingCommand.productMatches?.length || commandBusyRef.current) return;
+    const command = pendingCommand;
+    if (command.intent === 'stockout') {
+      if (!command.product) return;
+      commandBusyRef.current = true;
+      setLoading(true);
+      setCommandFeedback(null);
+      try {
+        const result = await recordStockoutObservation({
+          product_id: command.product.product_id,
+          source_event_id: `event_${command.commandId}`,
+          idempotency_key: `stockout_${command.commandId}`,
+          confirmed: true,
+          source_utterance: command.sourceUtterance,
+          source_channel: 'text',
+        });
+        setPendingCommand(null);
+        setCommandFeedback({
+          tone: 'success',
+          title: 'Stockout Observation Recorded',
+          message: `${command.product.name} is marked as reported out of stock. On-hand remains ${command.currentStockQuantity ?? 0} ${command.stockUnit ?? command.product.unit}; observation ${result.observation_id}.`,
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        setCommandFeedback({
+          tone: 'error',
+          title: 'Could Not Record Observation',
+          message: `${message} The preview remains available; retrying uses the same idempotency key.`,
+        });
+      } finally {
+        commandBusyRef.current = false;
+        setLoading(false);
+      }
+      return;
+    }
+    if (command.intent === 'balance' || command.amountPaise === undefined) return;
+
+    const currentBalance = command.currentBalancePaise ?? 0;
+    if (command.intent === 'repayment' && command.amountPaise > currentBalance) {
+      setCommandFeedback({
+        tone: 'error',
+        title: 'Repayment Exceeds Balance',
+        message: `Current due is ${formatRupees(currentBalance)}. This repayment cannot be posted. Nothing was recorded.`,
+      });
+      return;
+    }
+
+    commandBusyRef.current = true;
+    setLoading(true);
+    setCommandFeedback(null);
+    try {
+      const customer = command.customer ?? (command.createCustomerOnConfirm
+        ? await createCustomer({
+            display_name: command.entityQuery,
+            aliases: [command.entityQuery],
+            confirmed: true,
+            idempotency_key: `customer_${command.commandId}`,
+          })
+        : null);
+      if (!customer) throw new Error('Choose an exact customer before recording this command.');
+
+      const request = {
+        customer_id: customer.customer_id,
+        amount_paise: command.amountPaise,
+        source_event_id: `event_${command.commandId}`,
+        idempotency_key: `ledger_${command.commandId}`,
+        confirmed: true,
+      };
+      const result = command.intent === 'credit'
+        ? await postCredit(request)
+        : await postRepayment(request);
+      const balance = await fetchCustomerBalance(customer.customer_id);
+
+      setCustomerName(customer.display_name);
+      setActiveCustomerId(customer.customer_id);
+      setCustomerBalance(balance.balance_due_paise);
+      setPendingCommand(null);
+      setCommandFeedback({
+        tone: 'success',
+        title: command.intent === 'credit' ? 'Udhaar Recorded' : 'Jama Recorded',
+        message: `${formatRupees(command.amountPaise)} ${command.intent === 'credit' ? 'credit' : 'repayment'} recorded for ${customer.display_name}. New due: ${formatRupees(balance.balance_due_paise)}. Entry: ${result.entry_id}.`,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setCommandFeedback({
+        tone: 'error',
+        title: 'Could Not Record Command',
+        message: `${message} The preview remains available; retrying uses the same idempotency key.`,
+      });
+    } finally {
+      commandBusyRef.current = false;
+      setLoading(false);
+    }
+  };
+
+  const handleSubmitText = useCallback(async () => {
+    if (loading || commandBusyRef.current) return;
     const trimmed = input.trim();
     if (!trimmed) return;
 
@@ -236,11 +589,15 @@ export default function HomeScreen() {
     };
     setHistory((prev) => [entry, ...prev]);
     setInput('');
+    setCommandFeedback(null);
+    setPendingCommand(null);
 
     if (isInsight) {
       handleLoadInsightsBrief();
+      return;
     }
-  }, [input, handleLoadInsightsBrief]);
+    await handleRunMerchantCommand(trimmed);
+  }, [input, loading, handleLoadInsightsBrief, handleRunMerchantCommand]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -331,6 +688,158 @@ export default function HomeScreen() {
             </View>
 
             {loading && <ActivityIndicator size="small" color="#0f3460" style={{ marginVertical: 8 }} />}
+
+            {commandFeedback && (
+              <View style={[
+                styles.commandFeedback,
+                commandFeedback.tone === 'success'
+                  ? styles.commandFeedback_success
+                  : commandFeedback.tone === 'error'
+                    ? styles.commandFeedback_error
+                    : styles.commandFeedback_info,
+              ]}>
+                <Text style={styles.commandFeedbackTitle}>{commandFeedback.title}</Text>
+                <Text style={styles.commandFeedbackText}>{commandFeedback.message}</Text>
+              </View>
+            )}
+
+            {pendingCommand && (
+              <View style={styles.commandPreviewCard}>
+                <View style={styles.commandPreviewHeader}>
+                  <Text style={styles.commandPreviewTitle}>
+                    {pendingCommand.intent === 'credit'
+                      ? 'Udhaar Preview'
+                      : pendingCommand.intent === 'repayment'
+                        ? 'Jama Preview'
+                        : pendingCommand.intent === 'stockout'
+                          ? 'Stockout Preview'
+                          : 'Choose Customer'}
+                  </Text>
+                  <View style={styles.commandNotSavedBadge}>
+                    <Text style={styles.commandNotSavedText}>
+                      {pendingCommand.intent === 'balance' ? 'READ ONLY' : 'NOT RECORDED'}
+                    </Text>
+                  </View>
+                </View>
+
+                {pendingCommand.matches?.length ? (
+                  <>
+                    <Text style={styles.commandPreviewText}>Which exact customer did you mean by “{pendingCommand.entityQuery}”?</Text>
+                    {pendingCommand.matches.map((match) => (
+                      <TouchableOpacity
+                        key={match.customer_id}
+                        style={styles.commandMatchButton}
+                        onPress={() => handleChooseCommandCustomer(match)}
+                        disabled={loading}
+                      >
+                        <Text style={styles.commandMatchName}>{match.display_name}</Text>
+                        <Text style={styles.commandMatchId}>{match.customer_id}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity
+                      style={styles.commandCancelButton}
+                      onPress={() => { setPendingCommand(null); setCommandFeedback({ tone: 'info', title: 'Cancelled', message: 'Nothing was recorded.' }); }}
+                      disabled={loading}
+                    >
+                      <Text style={styles.commandCancelText}>Cancel command</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : pendingCommand.productMatches?.length ? (
+                  <>
+                    <Text style={styles.commandPreviewText}>Which exact product did you mean by “{pendingCommand.entityQuery}”?</Text>
+                    {pendingCommand.productMatches.map((product) => (
+                      <TouchableOpacity
+                        key={product.product_id}
+                        style={styles.commandMatchButton}
+                        onPress={() => handleChooseCommandProduct(product)}
+                        disabled={loading}
+                      >
+                        <Text style={styles.commandMatchName}>{product.name}</Text>
+                        <Text style={styles.commandMatchId}>{product.product_id}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity
+                      style={styles.commandCancelButton}
+                      onPress={() => { setPendingCommand(null); setCommandFeedback({ tone: 'info', title: 'Cancelled', message: 'Nothing was recorded.' }); }}
+                      disabled={loading}
+                    >
+                      <Text style={styles.commandCancelText}>Cancel command</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.commandPreviewText}>
+                      {pendingCommand.intent === 'stockout'
+                        ? `Product: ${pendingCommand.product?.name ?? pendingCommand.entityQuery}`
+                        : `Customer: ${pendingCommand.customer?.display_name ?? pendingCommand.entityQuery}`}
+                    </Text>
+                    {pendingCommand.amountPaise !== undefined && (
+                      <Text style={styles.commandPreviewAmount}>
+                        Amount: {formatRupees(pendingCommand.amountPaise)}
+                      </Text>
+                    )}
+                    {pendingCommand.intent === 'stockout' && pendingCommand.currentStockQuantity !== undefined && (
+                      <Text style={styles.commandPreviewText}>
+                        Current on-hand: {pendingCommand.currentStockQuantity} {pendingCommand.stockUnit ?? pendingCommand.product?.unit}
+                      </Text>
+                    )}
+                    {pendingCommand.intent === 'stockout' && (
+                      <Text style={styles.commandPreviewNote}>This records an observation only. It will not change stock quantity; use a physical count to update on-hand.</Text>
+                    )}
+                    {pendingCommand.currentBalancePaise !== undefined && pendingCommand.amountPaise !== undefined && (
+                      <Text style={styles.commandPreviewText}>
+                        Current due: {formatRupees(pendingCommand.currentBalancePaise)}
+                        {pendingCommand.intent === 'credit'
+                          ? ` · after recording: ${formatRupees(pendingCommand.currentBalancePaise + pendingCommand.amountPaise)}`
+                          : ''}
+                      </Text>
+                    )}
+                    {pendingCommand.createCustomerOnConfirm && (
+                      <Text style={styles.commandPreviewNote}>
+                        Confirming also creates a new synthetic customer with this exact name. No fuzzy matching is used.
+                      </Text>
+                    )}
+                    {pendingCommand.intent === 'repayment' &&
+                      pendingCommand.amountPaise !== undefined &&
+                      pendingCommand.currentBalancePaise !== undefined &&
+                      pendingCommand.amountPaise > pendingCommand.currentBalancePaise && (
+                        <Text style={styles.commandBlockedText}>
+                          Amount exceeds the current due. Change the command; no repayment can be posted.
+                        </Text>
+                      )}
+                    {pendingCommand.intent !== 'balance' && (
+                      <View style={styles.commandButtonRow}>
+                        <TouchableOpacity
+                          style={styles.commandCancelButton}
+                          onPress={() => { setPendingCommand(null); setCommandFeedback({ tone: 'info', title: 'Cancelled', message: 'Nothing was recorded.' }); }}
+                          disabled={loading}
+                        >
+                          <Text style={styles.commandCancelText}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[
+                            styles.commandConfirmButton,
+                            (loading || (pendingCommand.intent === 'repayment' &&
+                              pendingCommand.amountPaise !== undefined &&
+                              pendingCommand.currentBalancePaise !== undefined &&
+                              pendingCommand.amountPaise > pendingCommand.currentBalancePaise)) && styles.commandConfirmDisabled,
+                          ]}
+                          onPress={handleConfirmCommand}
+                          disabled={loading || (pendingCommand.intent === 'repayment' &&
+                            pendingCommand.amountPaise !== undefined &&
+                            pendingCommand.currentBalancePaise !== undefined &&
+                            pendingCommand.amountPaise > pendingCommand.currentBalancePaise)}
+                        >
+                          <Text style={styles.commandConfirmText}>
+                            {pendingCommand.intent === 'stockout' ? 'Confirm observation' : 'Confirm and record'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </>
+                )}
+              </View>
+            )}
 
             {/* ── End-to-End "Aaj Kaisa Raha?" Brief Card ──────────────── */}
             {insightsBrief && (
@@ -518,7 +1027,7 @@ export default function HomeScreen() {
                   disabled={loading}
                 >
                   <Ionicons name="checkmark-circle-outline" size={14} color="#28a745" style={{ marginRight: 4 }} />
-                  <Text style={[styles.quickActionText, { color: '#28a745' }]}>-₹30 Jamma</Text>
+                  <Text style={[styles.quickActionText, { color: '#28a745' }]}>-₹300 Jamma</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -539,11 +1048,12 @@ export default function HomeScreen() {
 
           {/* Bottom Command Input */}
           <View style={styles.inputBar}>
-            <TextInput
+              <TextInput
               style={styles.textInput}
               value={input}
               onChangeText={setInput}
-              placeholder="Ask 'Aaj kaisa raha?' or type command..."
+              editable={!loading}
+              placeholder="Try udhaar, jama, balance, or 'Aaj kaisa raha?'"
               placeholderTextColor="#9aa0a6"
               returnKeyType="send"
               onSubmitEditing={handleSubmitText}
@@ -551,7 +1061,7 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={[styles.sendBtn, !input.trim() && styles.sendBtnDisabled]}
               onPress={handleSubmitText}
-              disabled={!input.trim()}
+              disabled={!input.trim() || loading}
             >
               <Ionicons name="send" size={18} color="#ffffff" />
             </TouchableOpacity>
@@ -825,6 +1335,72 @@ const styles = StyleSheet.create({
   creditBtn: { backgroundColor: '#fff5f5' },
   repayBtn: { backgroundColor: '#eef9f0' },
   quickActionText: { fontSize: 12, fontWeight: '600', color: '#0f3460' },
+  commandFeedback: {
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 10,
+  },
+  commandFeedback_info: { backgroundColor: '#e8f0fe', borderColor: '#b6ccf2' },
+  commandFeedback_success: { backgroundColor: '#eef9f0', borderColor: '#b8dfbf' },
+  commandFeedback_error: { backgroundColor: '#fff1f0', borderColor: '#f3b9b4' },
+  commandFeedbackTitle: { fontSize: 13, fontWeight: '700', color: '#17324d', marginBottom: 3 },
+  commandFeedbackText: { fontSize: 12, color: '#3c4856', lineHeight: 18 },
+  commandPreviewCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#0f3460',
+    padding: 14,
+    marginBottom: 12,
+    elevation: 2,
+  },
+  commandPreviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  commandPreviewTitle: { fontSize: 15, fontWeight: '800', color: '#0f3460' },
+  commandNotSavedBadge: {
+    backgroundColor: '#fff3cd',
+    borderRadius: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  commandNotSavedText: { color: '#856404', fontSize: 9, fontWeight: '800' },
+  commandPreviewText: { color: '#343a40', fontSize: 13, lineHeight: 19, marginBottom: 4 },
+  commandPreviewAmount: { color: '#0f3460', fontSize: 18, fontWeight: '800', marginVertical: 5 },
+  commandPreviewNote: { color: '#856404', fontSize: 11, lineHeight: 16, marginTop: 5 },
+  commandBlockedText: { color: '#a61b1b', fontSize: 12, fontWeight: '600', marginTop: 5 },
+  commandMatchButton: {
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#d7dde5',
+    borderRadius: 6,
+    padding: 10,
+    marginTop: 7,
+  },
+  commandMatchName: { color: '#0f3460', fontSize: 13, fontWeight: '700' },
+  commandMatchId: { color: '#6c757d', fontSize: 10, marginTop: 2 },
+  commandButtonRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  commandCancelButton: {
+    backgroundColor: '#f1f3f5',
+    borderRadius: 6,
+    paddingVertical: 10,
+    alignItems: 'center',
+    flex: 1,
+  },
+  commandCancelText: { color: '#495057', fontSize: 12, fontWeight: '700' },
+  commandConfirmButton: {
+    backgroundColor: '#0f3460',
+    borderRadius: 6,
+    paddingVertical: 10,
+    alignItems: 'center',
+    flex: 2,
+  },
+  commandConfirmDisabled: { backgroundColor: '#adb5bd' },
+  commandConfirmText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
   historyCard: {
     backgroundColor: '#ffffff',
     borderRadius: 6,
