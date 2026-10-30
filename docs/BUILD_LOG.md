@@ -307,3 +307,9 @@
 - **Observed after user reported completion:** Maggi's current on-hand quantity is 23 packs; the latest timeline event is `STOCK_COUNT_RECORDED` with source utterance `Physical count: 23`. The timeline has no `STOCKOUT_OBSERVED` event.
 - **Result:** The intended stockout-then-count check (stock stays at 12 after observation, then becomes 10 after the entered count) is not verified. No data was changed by this audit.
 - **Next:** Repeat the stockout observation action, verify the quantity remains unchanged, then enter the intended physical count and confirm. Proceed to the growth brief/mock action after the inventory gate is clear.
+
+### 2026-10-30 — Follow-up inventory audit
+
+- **Read-only result:** Current Maggi on-hand quantity is 0 packs. Timeline now includes another `STOCK_COUNT_RECORDED` event with source utterance `Physical count: 0` (following the earlier count of 23 and seed count of 12).
+- **Stockout status:** No `STOCKOUT_OBSERVED` event exists yet. Entering a physical count of zero sets on-hand to zero; it does not record the separate stockout observation.
+- **No corrective write performed:** The audit did not change stock. Confirm the intended count before correcting it; for the demo distinction, record a stockout observation separately and verify that action itself leaves on-hand unchanged.
