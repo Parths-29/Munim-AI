@@ -4,6 +4,8 @@ This describes the synthetic single-shop backend slice on the current task branc
 
 Base URL for local development: `http://127.0.0.1:8000`. Money is integer paise. The demo shop is fixed to `shop_synth_01`; there is no authentication or multi-shop isolation in this prototype.
 
+Expo Web development origins default to `http://localhost:8081` and `http://127.0.0.1:8081`. Set backend-only `MUNIM_CORS_ORIGINS` to a comma-separated allowlist if the web dev server uses a different origin; do not use a wildcard in a deployed environment.
+
 ## `POST /speech/transcribe`
 
 Accepts a multipart form field named `file` with a supported audio MIME type and returns `{ "transcript", "language_code", "request_id", "provider" }`. Audio is forwarded server-to-server to Sarvam's short-form `/speech-to-text` REST endpoint using model `saaras:v4` and `mode=translit`, which keeps Hindi/Hinglish commands compatible with the current Latin-script parser. The backend requires `SARVAM_API_KEY` as an environment variable or in a gitignored backend/root `.env`; the key is never sent to the mobile app. Uploads are capped at 12 MB, the app caps recordings at 20 seconds, and audio is not written to the database or disk by the endpoint. The transcript only fills the input box; sending it runs the existing parser, and any write still needs merchant confirmation. If Sarvam is unconfigured or unavailable, typed input remains available.

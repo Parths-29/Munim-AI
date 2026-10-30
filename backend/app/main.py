@@ -2,6 +2,8 @@
 
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
+import os
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.customers import router as customers_router
 from app.api.actions import router as actions_router
@@ -28,6 +30,23 @@ app = FastAPI(
     description="Synthetic hackathon prototype; no live Paytm integration.",
     version="0.5.0",
     lifespan=lifespan,
+)
+
+# Expo Web runs on a separate local origin. Native Android/iOS clients do not
+# use CORS; allow only the local development origins by default.
+cors_origins = [
+    origin.strip()
+    for origin in os.environ.get(
+        "MUNIM_CORS_ORIGINS",
+        "http://localhost:8081,http://127.0.0.1:8081",
+    ).split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
 )
 
 app.include_router(health_router)

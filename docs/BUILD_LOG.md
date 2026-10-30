@@ -8,7 +8,7 @@
 **Active work branch:** `codex/sarvam-voice-input`, based on `codex/mock-action-outcomes` at `5a990b5`
 **Base lineage:** `origin/main` at `318863e` (includes merged PR #10), plus pushed mock-action tracking milestone.
 **Latest pushed commit:** `91f62cc` — `feat: add Sarvam voice input with merchant confirmation`
-**Working tree:** clean after the voice-input milestone.
+**Working tree:** local browser-preview support is being recorded on this branch.
 **Merge status:** PRs #7–#10 are in `main`; mock-action tracking and voice input are pushed feature branches, with no PR opened by Codex.
 
 ### Product and scope
@@ -189,3 +189,11 @@
 - **Not yet verified:** Actual Sarvam account/credential connectivity and recording/transcription on a physical phone. No live API call was made to avoid consuming quota; type/build checks do not prove microphone or provider behavior on-device.
 - **Limitations:** The fixed parser supports a narrow Romanized Hindi/Hinglish command set and numeric amounts; unclear or unsupported transcripts stop for manual correction. Recording cap is 20 seconds in the app; the backend also caps uploads at 12 MB. Text remains available if voice is unavailable.
 - **Next:** Push this branch, then have the team try one spoken command on the demo phone with the backend's `SARVAM_API_KEY` configured. Use the observed transcript to fix recognition/parser issues before adding voice responses or broad language understanding.
+
+### 2026-10-30 — Local browser preview
+
+- **Goal:** Let the team review the actual app screens on the laptop browser as well as Expo Go.
+- **Changes:** Added Expo Web runtime dependencies (`react-dom`, `react-native-web`), local-origin CORS middleware configurable by backend-only `MUNIM_CORS_ORIGINS`, and setup instructions. The preview ran at `http://localhost:8081/` against an isolated synthetic SQLite database; the business brief and pending action card rendered using deterministic Gemini fallback.
+- **Checks:** CORS preflight for `http://localhost:8081` passed. Browser showed the synthetic brief, evidence rows, caveats, and the unapproved “Approve & Track for 7 Days” action. Typecheck was run; web bundle compile completed, but static web export stopped while processing existing 1×1 placeholder PNG assets with invalid CRCs (`icon.png`, `adaptive-icon.png`, `splash-icon.png`, and `favicon.png`). The development server renders successfully.
+- **Limitations:** This laptop preview does not verify Android microphone behavior or Sarvam account connectivity. The four tiny PNG assets are existing placeholders and need replacement before a clean static web export or release build.
+- **Next:** Keep the browser preview available for review, then run the voice flow on a physical phone.

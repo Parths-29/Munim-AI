@@ -85,6 +85,16 @@ npm run android
 This prints a **QR code** in the terminal. Open **Expo Go** on your Android
 phone, tap **"Scan QR code"**, and point the camera at the code.
 
+## Browser preview
+
+Install dependencies with `npm ci`, start the backend on port `8000`, then run:
+
+```bash
+npm run web
+```
+
+The backend allows the default Expo Web origins on port `8081`; set backend-only `MUNIM_CORS_ORIGINS` if you use another port. Browser preview is useful for reviewing screens and synthetic insights. Microphone capture and Sarvam transcription still need a real device/provider check.
+
 > **Same-network requirement:** your laptop and phone must be on the same
 > Wi-Fi network. If on a hotspot, scan the QR code from the Expo Go app
 > directly; LAN URLs must be reachable.
