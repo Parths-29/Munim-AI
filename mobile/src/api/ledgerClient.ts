@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 /**
  * Comprehensive Typed client for KiranaOS Backend API v0.5
  * Ref: docs/contracts/backend-api-v0.md
@@ -494,11 +496,22 @@ export interface SpeechTranscriptionResponse {
 
 export async function transcribeMerchantAudio(uri: string): Promise<SpeechTranscriptionResponse> {
   const form = new FormData();
-  form.append('file', {
-    uri,
-    name: 'merchant-voice.m4a',
-    type: 'audio/mp4',
-  } as unknown as Blob);
+  if (Platform.OS === 'web') {
+    // Expo Audio records WebM in browsers. Browser FormData needs a real Blob;
+    // React Native's { uri, name, type } file descriptor only works natively.
+    const audioResponse = await fetch(uri);
+    if (!audioResponse.ok) throw new Error('Could not read the browser recording. Please record again.');
+    const audioBlob = await audioResponse.blob();
+    const contentType = audioBlob.type?.split(';', 1)[0] || 'audio/webm';
+    const extension = contentType.includes('webm') ? 'webm' : contentType.includes('wav') ? 'wav' : 'm4a';
+    form.append('file', audioBlob, `merchant-voice.${extension}`);
+  } else {
+    form.append('file', {
+      uri,
+      name: 'merchant-voice.m4a',
+      type: 'audio/mp4',
+    } as unknown as Blob);
+  }
   const res = await fetch(`${API_BASE_URL}/speech/transcribe`, {
     method: 'POST',
     body: form,

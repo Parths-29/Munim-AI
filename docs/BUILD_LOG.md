@@ -207,3 +207,13 @@
 - **Safety:** The parser only creates a preview. Existing merchant confirmation, backend validation, idempotency, and ledger balance rules remain in force.
 - **Limitations:** Spoken number words such as “pachaas” are not inferred. Sarvam recording/transcription still needs a real-device and live-credential check; no Paytm production integration is claimed.
 - **Next:** Run an end-to-end merchant command rehearsal on a phone, capturing actual Sarvam transcripts and checking exact customer/product resolution and preview values before confirming any write.
+
+### 2026-10-30 — Browser voice upload and provider connectivity diagnosis
+
+- **Goal:** Fix the browser voice upload shape and identify why speech, Gemini, and MongoDB appeared disconnected.
+- **Changes:** `mobile/src/api/ledgerClient.ts` now reads the browser recording URI as a real `Blob`, derives its MIME type (including removing codec parameters), and sends WebM with a `.webm` filename where appropriate. Native uploads retain the React Native file descriptor. `HomeScreen.tsx` displays the specific recording/transcription error inline and releases browser blob URLs after use.
+- **Local secret configuration:** Sarvam was present in the separate local work checkout but missing from this checkout's `.env`; only the Sarvam entry was copied into this checkout's ignored `.env`. No credential was added to Git or printed. The backend resolver now finds it.
+- **Connectivity:** A synthetic tone reached Sarvam directly (HTTP 200) and through local `POST /speech/transcribe` (HTTP 422 “No speech detected”), confirming auth, endpoint, and backend forwarding; a tone is intentionally not treated as successful speech recognition. MongoDB Atlas authenticated `ping` succeeded. Gemini returned HTTP 401 for the configured key (“API key not valid”); the facts flow will continue using deterministic fallback until that key is replaced. The app itself currently uses SQLite and does not use MongoDB.
+- **Checks:** `npm run typecheck` passed. No real user audio was recorded or transmitted. No browser microphone permission was granted by Codex.
+- **Limitations:** A real spoken recording from the browser or phone is still needed to verify audio capture and transcription end to end. A browser must be allowed microphone access; an in-app browser may restrict that permission. Gemini remains unconfigured effectively until a valid key is supplied.
+- **Next:** Reopen/reload the local browser preview, allow microphone access if prompted, record one short spoken command, and confirm the returned transcript appears in the editable input. Then test the same flow on the Android device. Replace the invalid Gemini key separately if Gemini summaries are needed.

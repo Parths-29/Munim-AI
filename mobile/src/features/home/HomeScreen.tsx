@@ -195,11 +195,12 @@ export default function HomeScreen() {
       setVoiceNotice(`Transcript ready${detectedLanguage}. Review it, then tap send. Nothing is recorded until you confirm the next preview.`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      setVoiceNotice('Voice transcription failed. You can type the request instead.');
+      setVoiceNotice(`Voice transcription failed: ${message} You can type the request instead.`);
       Alert.alert('Voice Input Unavailable', message);
     } finally {
       const uri = audioRecorder.uri;
-      if (uri) await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => undefined);
+      if (uri?.startsWith('blob:')) URL.revokeObjectURL(uri);
+      else if (uri) await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => undefined);
       setVoiceBusy(false);
     }
   };
@@ -209,6 +210,7 @@ export default function HomeScreen() {
     try {
       const permission = await AudioModule.requestRecordingPermissionsAsync();
       if (!permission.granted) {
+        setVoiceNotice('Microphone permission was denied. Allow microphone access for this site, then try again.');
         Alert.alert('Microphone Permission Needed', 'Allow microphone access to dictate a short merchant request.');
         return;
       }
@@ -219,7 +221,7 @@ export default function HomeScreen() {
       voiceStopTimerRef.current = setTimeout(() => { void stopVoiceRecording(); }, 20_000);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      setVoiceNotice('Could not start microphone recording. Type your request instead.');
+      setVoiceNotice(`Could not start microphone recording: ${message} Type your request instead.`);
       Alert.alert('Could Not Start Recording', message);
     }
   };
