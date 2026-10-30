@@ -7,8 +7,9 @@
 **Last checked:** 30 October 2026  
 **Active work branch:** `codex/mock-action-outcomes`, started from `origin/main` at `318863e`
 **Base:** `origin/main` at `318863e` (includes merged PR #10)
-**Working tree:** product changes are in progress on this branch.
-**Merge status:** explainer hardening and confirmed text commands are merged into `main` through PRs #7–#10. This branch adds persisted merchant mock-action approvals and honest outcome-window tracking.
+**Latest pushed commit:** `0893ede` — `feat: persist merchant mock actions and track outcomes`
+**Working tree:** clean after the milestone commit.
+**Merge status:** explainer hardening and confirmed text commands are merged into `main` through PRs #7–#10. The action tracking milestone is pushed to `codex/mock-action-outcomes`; no PR was opened.
 
 ### Product and scope
 
@@ -172,7 +173,7 @@
 
 - **Goal:** Complete the trustworthy action loop after the merchant reviews a suggestion.
 - **Changes:** Added append-only `mock_actions` storage; merchant-confirmed, idempotent `POST /actions/mock`; `GET /actions/latest`; baseline snapshot; scheduled seven-day outcome window; factual outcome status that stays pending until post-approval rows exist. The mobile brief now saves and restores approval and shows baseline/window/status.
-- **Branch/base:** `codex/mock-action-outcomes`, based on `origin/main` at `318863e` (PR #10 merged).
+- **Branch/base:** `codex/mock-action-outcomes`, based on `origin/main` at `318863e` (PR #10 merged); commit `0893ede` pushed to `origin`.
 - **Data truth:** Current synthetic fixture ends on 2026-10-29 and has no post-approval rows. The demo therefore shows a scheduled outcome check; it does not fabricate a lift. If a completed window has no rows, status becomes `insufficient_data`. Any available comparison is observational and does not attribute a change to the mock action.
 - **Checks:** `python -m compileall -q app` passed. An isolated SQLite service smoke passed for approval persistence, idempotency replay, latest-action restore, unconfirmed rejection, and mismatched-key rejection. `npm run typecheck` passed. `npx expo export --platform android` passed (707 modules; Hermes bundle exported). `git diff --check` passed.
 - **Limitations:** No live offer publishing, live Paytm feed, or production authentication. The post-approval measurement cannot complete on the current fixed historical fixture.
