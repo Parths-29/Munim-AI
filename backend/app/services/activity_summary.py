@@ -3,7 +3,7 @@
 from datetime import datetime
 
 from app.domain.models import ActivitySummaryView, RecentPaymentSummary
-from app.services.database import DEMO_SHOP_ID, connect
+from app.services.database import connect, current_shop
 from app.services.events import list_events
 
 
@@ -14,14 +14,14 @@ def _money(amount_paise: int) -> str:
 def get_activity_summary() -> ActivitySummaryView:
     with connect() as connection:
         event_count = int(connection.execute(
-            "SELECT COUNT(*) FROM business_events WHERE shop_id = ?", (DEMO_SHOP_ID,)
+            "SELECT COUNT(*) FROM business_events WHERE shop_id = ?", (current_shop(),)
         ).fetchone()[0])
         ledger = {
             row["entry_type"]: (int(row["entry_count"]), int(row["total_paise"] or 0))
             for row in connection.execute(
                 """SELECT entry_type, COUNT(*) AS entry_count, COALESCE(SUM(amount_paise), 0) AS total_paise
                    FROM ledger_entries WHERE shop_id = ? AND status = 'POSTED' GROUP BY entry_type""",
-                (DEMO_SHOP_ID,),
+                (current_shop(),),
             ).fetchall()
         }
         payments = {
@@ -29,7 +29,7 @@ def get_activity_summary() -> ActivitySummaryView:
             for row in connection.execute(
                 """SELECT payment_status, COUNT(*) AS event_count, COALESCE(SUM(amount_paise), 0) AS total_paise
                    FROM payment_events WHERE shop_id = ? GROUP BY payment_status""",
-                (DEMO_SHOP_ID,),
+                (current_shop(),),
             ).fetchall()
         }
         open_review = connection.execute(
@@ -41,14 +41,14 @@ def get_activity_summary() -> ActivitySummaryView:
                    SELECT 1 FROM payment_resolutions r
                    WHERE r.shop_id = p.shop_id AND r.event_id = p.event_id
                  )""",
-            (DEMO_SHOP_ID,),
+            (current_shop(),),
         ).fetchone()
         event_types = {
             row["event_type"]: int(row["event_count"])
             for row in connection.execute(
                 """SELECT event_type, COUNT(*) AS event_count FROM business_events
                    WHERE shop_id = ? GROUP BY event_type""",
-                (DEMO_SHOP_ID,),
+                (current_shop(),),
             ).fetchall()
         }
         recent_payment_rows = connection.execute(
@@ -56,7 +56,7 @@ def get_activity_summary() -> ActivitySummaryView:
                       resolution_reason, occurred_at
                FROM payment_events WHERE shop_id = ?
                ORDER BY created_at DESC, event_id DESC LIMIT 5""",
-            (DEMO_SHOP_ID,),
+            (current_shop(),),
         ).fetchall()
 
     credit_count, credit_total = ledger.get("CREDIT", (0, 0))

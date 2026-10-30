@@ -304,6 +304,53 @@ CREATE TABLE IF NOT EXISTS ledger_page_postings (
 """ + _append_only("ledger_page_postings", "ledger page postings")
 
 
+INVENTORY_V2 = """
+-- Merchant-set product profile. Append-only: the latest row per product wins.
+-- retail_price_paise is the merchant's own selling price; supplier costs never change it.
+CREATE TABLE IF NOT EXISTS product_profiles (
+    profile_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    category TEXT,
+    retail_price_paise INTEGER CHECK (retail_price_paise IS NULL OR retail_price_paise >= 0),
+    reorder_level INTEGER CHECK (reorder_level IS NULL OR reorder_level >= 0),
+    reorder_quantity INTEGER CHECK (reorder_quantity IS NULL OR reorder_quantity > 0),
+    lead_time_days INTEGER CHECK (lead_time_days IS NULL OR lead_time_days >= 0),
+    idempotency_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (shop_id, product_id) REFERENCES products(shop_id, product_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_product_profiles_latest ON product_profiles(shop_id, product_id, created_at);
+""" + _append_only("product_profiles", "product profiles") + """
+-- Stock leaving the shop. On-hand = counts + receipts + these (negative deltas).
+CREATE TABLE IF NOT EXISTS stock_outflow_movements (
+    movement_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    batch_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    quantity_delta INTEGER NOT NULL CHECK (quantity_delta < 0),
+    unit TEXT NOT NULL,
+    entered_quantity INTEGER NOT NULL CHECK (entered_quantity > 0),
+    entered_unit TEXT NOT NULL,
+    reason TEXT NOT NULL CHECK (reason IN ('SALE', 'WASTAGE', 'SELF_USE', 'RETURN_TO_SUPPLIER')),
+    unit_price_paise INTEGER CHECK (unit_price_paise IS NULL OR unit_price_paise >= 0),
+    amount_paise INTEGER CHECK (amount_paise IS NULL OR amount_paise >= 0),
+    source_channel TEXT NOT NULL,
+    source_utterance TEXT,
+    source_event_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL CHECK (status = 'POSTED'),
+    occurred_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (shop_id, product_id) REFERENCES products(shop_id, product_id),
+    UNIQUE (shop_id, source_event_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_outflows_product_time ON stock_outflow_movements(shop_id, product_id, occurred_at);
+""" + _append_only("stock_outflow_movements", "stock outflow movements")
+
+
 def _baseline() -> str:
     from app.services.database import SCHEMA
 
@@ -317,6 +364,7 @@ MIGRATIONS: list[tuple[int, str, object]] = [
     (3, "intake_proposals_and_stock_receipts", INTAKE_AND_RECEIPTS),
     (4, "reminder_consent_and_outbox", REMINDERS),
     (5, "bahi_khata_ledger_pages", LEDGER_PAGES),
+    (6, "inventory_profiles_and_outflows", INVENTORY_V2),
 ]
 
 

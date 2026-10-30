@@ -34,7 +34,7 @@ from app.domain.intake import (
     SupplierMatchView,
 )
 from app.domain.models import ProductView
-from app.services.database import DEMO_SHOP_ID, connect
+from app.services.database import connect, current_shop
 from app.services.image_validation import validate_invoice_image
 from app.services.invoice_extraction import ProviderUnavailable, RawExtraction, get_invoice_provider
 from app.services.ledger import normalize_alias
@@ -256,7 +256,7 @@ def insert_proposal(
            (proposal_id, shop_id, source_kind, status, version, content_hash, draft_json, extraction_json,
             image_sha256, source_utterance, idempotency_key, posted_receipt_id, created_at, updated_at, expires_at)
            VALUES (?, ?, ?, 'NEEDS_REVIEW', 1, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)""",
-        (proposal_id, DEMO_SHOP_ID, source_kind, digest, draft_json, json.dumps(extraction_payload),
+        (proposal_id, current_shop(), source_kind, digest, draft_json, json.dumps(extraction_payload),
          image_sha256, source_utterance, idempotency_key, created.isoformat(), created.isoformat(),
          (created + timedelta(days=expiry_days())).isoformat()),
     )
@@ -277,7 +277,7 @@ def _store_status(connection: sqlite3.Connection, proposal_id: str) -> None:
 
 def load_row(connection: sqlite3.Connection, proposal_id: str, kinds: set[str] | None = None) -> sqlite3.Row:
     row = connection.execute(
-        "SELECT * FROM intake_proposals WHERE shop_id = ? AND proposal_id = ?", (DEMO_SHOP_ID, proposal_id)
+        "SELECT * FROM intake_proposals WHERE shop_id = ? AND proposal_id = ?", (current_shop(), proposal_id)
     ).fetchone()
     if row is None or (kinds and row["source_kind"] not in kinds):
         raise HTTPException(status_code=404, detail="Proposal not found in this demo shop.")
@@ -375,7 +375,7 @@ def list_proposals(kinds: set[str], status: str | None = None, limit: int = 50) 
         rows = connection.execute(
             f"""SELECT * FROM intake_proposals WHERE shop_id = ? AND source_kind IN ({placeholders})
                 ORDER BY created_at DESC LIMIT ?""",
-            (DEMO_SHOP_ID, *sorted(kinds), min(max(limit, 1), 100)),
+            (current_shop(), *sorted(kinds), min(max(limit, 1), 100)),
         ).fetchall()
         views = [evaluate(connection, row) for row in rows]
     return [view for view in views if status is None or view.status == status]
@@ -437,14 +437,14 @@ def _require_open(connection: sqlite3.Connection, row: sqlite3.Row) -> None:
 
 def _product(connection: sqlite3.Connection, product_id: str) -> sqlite3.Row | None:
     return connection.execute(
-        "SELECT product_id, name, unit FROM products WHERE shop_id = ? AND product_id = ?", (DEMO_SHOP_ID, product_id)
+        "SELECT product_id, name, unit FROM products WHERE shop_id = ? AND product_id = ?", (current_shop(), product_id)
     ).fetchone()
 
 
 def _product_view(connection: sqlite3.Connection, product_id: str) -> ProductView:
     product = _product(connection, product_id)
     aliases = [row["alias"] for row in connection.execute(
-        "SELECT alias FROM product_aliases WHERE shop_id = ? AND product_id = ? ORDER BY alias", (DEMO_SHOP_ID, product_id)
+        "SELECT alias FROM product_aliases WHERE shop_id = ? AND product_id = ? ORDER BY alias", (current_shop(), product_id)
     )]
     return ProductView(product_id=product["product_id"], name=product["name"], aliases=aliases, unit=product["unit"])
 
@@ -454,7 +454,7 @@ def _exact_products(connection: sqlite3.Connection, text: str) -> list[str]:
         """SELECT DISTINCT p.product_id FROM products p
            JOIN product_aliases a ON a.shop_id = p.shop_id AND a.product_id = p.product_id
            WHERE p.shop_id = ? AND a.alias_normalized = ? ORDER BY p.name""",
-        (DEMO_SHOP_ID, normalize_alias(text)),
+        (current_shop(), normalize_alias(text)),
     )]
 
 
@@ -463,7 +463,7 @@ def _suggested_products(connection: sqlite3.Connection, text: str) -> list[str]:
     words = f" {normalize_alias(text)} "
     found = []
     for row in connection.execute(
-        "SELECT DISTINCT product_id, alias_normalized FROM product_aliases WHERE shop_id = ?", (DEMO_SHOP_ID,)
+        "SELECT DISTINCT product_id, alias_normalized FROM product_aliases WHERE shop_id = ?", (current_shop(),)
     ):
         alias = row["alias_normalized"]
         if len(alias) >= 3 and (f" {alias} " in words or f" {words.strip()} " in f" {alias} ") and row["product_id"] not in found:
@@ -475,7 +475,7 @@ def stored_conversion(connection: sqlite3.Connection, product_id: str, unit: str
     row = connection.execute(
         """SELECT base_units_per_unit FROM product_unit_conversions
            WHERE shop_id = ? AND product_id = ? AND unit = ? ORDER BY created_at DESC, conversion_id DESC LIMIT 1""",
-        (DEMO_SHOP_ID, product_id, unit),
+        (current_shop(), product_id, unit),
     ).fetchone()
     return int(row[0]) if row else None
 
@@ -485,7 +485,7 @@ def _unit_options(connection: sqlite3.Connection, product: sqlite3.Row | None) -
         return []
     others = [row["unit"] for row in connection.execute(
         "SELECT DISTINCT unit FROM product_unit_conversions WHERE shop_id = ? AND product_id = ? ORDER BY unit",
-        (DEMO_SHOP_ID, product["product_id"]),
+        (current_shop(), product["product_id"]),
     )]
     return list(dict.fromkeys([product["unit"], *others]))
 
@@ -602,7 +602,7 @@ def evaluate(connection: sqlite3.Connection, row: sqlite3.Row) -> ProposalView:
     supplier_id = None
     if draft.supplier.supplier_id:
         exists = connection.execute(
-            "SELECT 1 FROM suppliers WHERE shop_id = ? AND supplier_id = ?", (DEMO_SHOP_ID, draft.supplier.supplier_id)
+            "SELECT 1 FROM suppliers WHERE shop_id = ? AND supplier_id = ?", (current_shop(), draft.supplier.supplier_id)
         ).fetchone()
         supplier_status = "SELECTED" if exists else "NOT_FOUND"
         supplier_id = draft.supplier.supplier_id if exists else None
@@ -679,7 +679,7 @@ def evaluate(connection: sqlite3.Connection, row: sqlite3.Row) -> ProposalView:
             posted = connection.execute(
                 """SELECT receipt_id, total_paise, proposal_id FROM stock_receipts
                    WHERE shop_id = ? AND supplier_id = ? AND invoice_number_normalized = ?""",
-                (DEMO_SHOP_ID, supplier_id, number),
+                (current_shop(), supplier_id, number),
             ).fetchone()
             if posted and posted["proposal_id"] != row["proposal_id"]:
                 conflicting = posted["total_paise"] != invoice.total_paise
@@ -692,7 +692,7 @@ def evaluate(connection: sqlite3.Connection, row: sqlite3.Row) -> ProposalView:
         else:
             posted_any = connection.execute(
                 "SELECT receipt_id FROM stock_receipts WHERE shop_id = ? AND invoice_number_normalized = ? AND proposal_id != ? LIMIT 1",
-                (DEMO_SHOP_ID, number, row["proposal_id"]),
+                (current_shop(), number, row["proposal_id"]),
             ).fetchone()
             if posted_any:
                 issues.append(Issue(code="POSSIBLE_DUPLICATE_INVOICE", severity="warning", field="invoice_number",
@@ -700,7 +700,7 @@ def evaluate(connection: sqlite3.Connection, row: sqlite3.Row) -> ProposalView:
         open_drafts = connection.execute(
             """SELECT proposal_id, draft_json FROM intake_proposals WHERE shop_id = ? AND proposal_id != ?
                AND status IN ('NEEDS_REVIEW', 'READY')""",
-            (DEMO_SHOP_ID, row["proposal_id"]),
+            (current_shop(), row["proposal_id"]),
         ).fetchall()
         for other in open_drafts:
             other_number = normalize_invoice_number(json.loads(other["draft_json"])["invoice"].get("invoice_number"))
@@ -711,7 +711,7 @@ def evaluate(connection: sqlite3.Connection, row: sqlite3.Row) -> ProposalView:
     if row["image_sha256"]:
         same_image = connection.execute(
             "SELECT proposal_id FROM intake_proposals WHERE shop_id = ? AND image_sha256 = ? AND proposal_id != ? LIMIT 1",
-            (DEMO_SHOP_ID, row["image_sha256"], row["proposal_id"]),
+            (current_shop(), row["image_sha256"], row["proposal_id"]),
         ).fetchone()
         if same_image:
             issues.append(Issue(code="POSSIBLE_DUPLICATE_IMAGE", severity="warning",

@@ -3,7 +3,7 @@
 import asyncio
 import logging
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from starlette.concurrency import run_in_threadpool
 from contextlib import asynccontextmanager
 import os
@@ -24,7 +24,7 @@ from app.api.payments import router as payments_router
 from app.api.reminders import router as reminders_router
 from app.api.speech import router as speech_router
 from app.api.suppliers import router as suppliers_router
-from app.services.database import connect, initialize_database
+from app.services.database import SHOPS, _CURRENT_SHOP, connect, initialize_database, resolve_shop, use_shop
 from app.services.reminders import run_eligibility
 from app.services.synthetic_data import seed_synthetic_transactions
 
@@ -34,7 +34,9 @@ async def _reminder_scheduler(minutes: float) -> None:
     logger = logging.getLogger("munim.reminders")
     while True:
         try:
-            await run_in_threadpool(run_eligibility)
+            for shop_id in SHOPS.values():
+                with use_shop(shop_id):
+                    await run_in_threadpool(run_eligibility)
         except Exception as error:  # keep the loop alive; never log customer data
             logger.warning("Reminder eligibility run failed (%s).", type(error).__name__)
         await asyncio.sleep(minutes * 60)
@@ -56,7 +58,18 @@ async def lifespan(_: FastAPI):
     if task:
         task.cancel()
 
+async def select_shop(x_munim_shop: str | None = Header(default=None)) -> str:
+    """Per-request synthetic shop: kirana (default), tea_stall, or medical_store."""
+    try:
+        shop_id = resolve_shop(x_munim_shop)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Unknown shop. Use one of: {', '.join(SHOPS)}.") from None
+    _CURRENT_SHOP.set(shop_id)  # async dependency: copied into the threadpool context for sync endpoints
+    return shop_id
+
+
 app = FastAPI(
+    dependencies=[Depends(select_shop)],
     title="Munim-AI API",
     description="Synthetic hackathon prototype; no live Paytm integration.",
     version="0.5.0",
@@ -77,7 +90,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "X-Munim-Shop", "X-Munim-Admin-Token"],
 )
 
 app.include_router(health_router)

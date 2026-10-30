@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 
 from app.domain.models import CustomerBalance, CustomerCreate, CustomerResolution, CustomerView, LedgerEntryView, LedgerWrite
-from app.services.database import DEMO_SHOP_ID, connect
+from app.services.database import connect, current_shop
 from app.services.events import append_event
 
 
@@ -39,7 +39,7 @@ def create_customer(request: CustomerCreate) -> CustomerView:
                 raise HTTPException(status_code=409, detail="Idempotency key was already used to create a different customer.")
             stored_aliases = connection.execute(
                 "SELECT alias_normalized FROM customer_aliases WHERE shop_id = ? AND customer_id = ?",
-                (DEMO_SHOP_ID, replay["customer_id"]),
+                (current_shop(), replay["customer_id"]),
             ).fetchall()
             expected_aliases = {normalize_alias(alias) for alias in aliases}
             if {row["alias_normalized"] for row in stored_aliases} != expected_aliases:
@@ -49,12 +49,12 @@ def create_customer(request: CustomerCreate) -> CustomerView:
         customer_id = f"cust_{uuid.uuid4().hex[:12]}"
         connection.execute(
             "INSERT INTO customers(customer_id, shop_id, display_name, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?)",
-            (customer_id, DEMO_SHOP_ID, display_name, key, now),
+            (customer_id, current_shop(), display_name, key, now),
         )
         for alias in aliases:
             connection.execute(
                 "INSERT INTO customer_aliases(alias_id, shop_id, customer_id, alias, alias_normalized) VALUES (?, ?, ?, ?, ?)",
-                (f"alias_{uuid.uuid4().hex[:12]}", DEMO_SHOP_ID, customer_id, alias, normalize_alias(alias)),
+                (f"alias_{uuid.uuid4().hex[:12]}", current_shop(), customer_id, alias, normalize_alias(alias)),
             )
         append_event(
             connection,
@@ -82,7 +82,7 @@ def resolve_customer(query: str) -> CustomerResolution:
                WHERE c.shop_id = ?
                  AND a.alias_normalized = ?
                ORDER BY c.display_name""",
-            (DEMO_SHOP_ID, normalized),
+            (current_shop(), normalized),
         ).fetchall()
         matches = [_customer_view(connection, row["customer_id"]) for row in rows]
     status = "NOT_FOUND" if not matches else "RESOLVED" if len(matches) == 1 else "AMBIGUOUS"
@@ -93,7 +93,7 @@ def get_balance(customer_id: str) -> CustomerBalance:
     with connect() as connection:
         customer = connection.execute(
             "SELECT customer_id, display_name FROM customers WHERE shop_id = ? AND customer_id = ?",
-            (DEMO_SHOP_ID, customer_id),
+            (current_shop(), customer_id),
         ).fetchone()
         if customer is None:
             raise HTTPException(status_code=404, detail="Customer not found in this demo shop.")
@@ -103,7 +103,7 @@ def get_balance(customer_id: str) -> CustomerBalance:
                  COUNT(*) AS entry_count
                FROM ledger_entries
                WHERE shop_id = ? AND customer_id = ? AND status = 'POSTED'""",
-            (DEMO_SHOP_ID, customer_id),
+            (current_shop(), customer_id),
         ).fetchone()
     return CustomerBalance(
         customer_id=customer["customer_id"],
@@ -131,7 +131,7 @@ def _post_ledger_entry(request: LedgerWrite, entry_type: str) -> LedgerEntryView
         connection.execute("BEGIN IMMEDIATE")
         existing_rows = connection.execute(
             "SELECT * FROM ledger_entries WHERE idempotency_key = ? OR (shop_id = ? AND source_event_id = ?) LIMIT 2",
-            (request.idempotency_key, DEMO_SHOP_ID, request.source_event_id),
+            (request.idempotency_key, current_shop(), request.source_event_id),
         ).fetchall()
         if len(existing_rows) > 1:
             raise HTTPException(status_code=409, detail="Idempotency key and source event resolve to different ledger entries.")
@@ -149,7 +149,7 @@ def _post_ledger_entry(request: LedgerWrite, entry_type: str) -> LedgerEntryView
 
         customer = connection.execute(
             "SELECT customer_id FROM customers WHERE shop_id = ? AND customer_id = ?",
-            (DEMO_SHOP_ID, request.customer_id),
+            (current_shop(), request.customer_id),
         ).fetchone()
         if customer is None:
             raise HTTPException(status_code=404, detail="Customer not found in this demo shop.")
@@ -158,7 +158,7 @@ def _post_ledger_entry(request: LedgerWrite, entry_type: str) -> LedgerEntryView
             balance = connection.execute(
                 """SELECT COALESCE(SUM(CASE entry_type WHEN 'CREDIT' THEN amount_paise WHEN 'REPAYMENT' THEN -amount_paise END), 0)
                    FROM ledger_entries WHERE shop_id = ? AND customer_id = ? AND status = 'POSTED'""",
-                (DEMO_SHOP_ID, request.customer_id),
+                (current_shop(), request.customer_id),
             ).fetchone()[0]
             if request.amount_paise > int(balance):
                 raise HTTPException(
@@ -170,7 +170,7 @@ def _post_ledger_entry(request: LedgerWrite, entry_type: str) -> LedgerEntryView
             """INSERT INTO ledger_entries
                (entry_id, shop_id, customer_id, entry_type, amount_paise, source_event_id, idempotency_key, status, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, 'POSTED', ?)""",
-            (entry_id, DEMO_SHOP_ID, request.customer_id, entry_type, request.amount_paise, request.source_event_id, request.idempotency_key, now),
+            (entry_id, current_shop(), request.customer_id, entry_type, request.amount_paise, request.source_event_id, request.idempotency_key, now),
         )
         row = connection.execute("SELECT * FROM ledger_entries WHERE entry_id = ?", (entry_id,)).fetchone()
         append_event(
@@ -195,13 +195,13 @@ def _post_ledger_entry(request: LedgerWrite, entry_type: str) -> LedgerEntryView
 def _customer_view(connection: sqlite3.Connection, customer_id: str) -> CustomerView:
     customer = connection.execute(
         "SELECT customer_id, display_name FROM customers WHERE shop_id = ? AND customer_id = ?",
-        (DEMO_SHOP_ID, customer_id),
+        (current_shop(), customer_id),
     ).fetchone()
     if customer is None:
         raise HTTPException(status_code=404, detail="Customer not found in this demo shop.")
     aliases = connection.execute(
         "SELECT alias FROM customer_aliases WHERE shop_id = ? AND customer_id = ? ORDER BY alias",
-        (DEMO_SHOP_ID, customer_id),
+        (current_shop(), customer_id),
     ).fetchall()
     return CustomerView(customer_id=customer["customer_id"], display_name=customer["display_name"], aliases=[row["alias"] for row in aliases])
 

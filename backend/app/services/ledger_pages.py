@@ -32,7 +32,7 @@ from app.domain.ledger_pages import (
     PageVoiceCorrectionResult,
 )
 from app.domain.models import CustomerView
-from app.services.database import DEMO_SHOP_ID, connect
+from app.services.database import connect, current_shop
 from app.services.events import append_event
 from app.services.image_validation import validate_invoice_image
 from app.services.invoice_extraction import ProviderUnavailable
@@ -116,7 +116,7 @@ def _insert(connection, draft: PageDraft, extraction: ExtractionView, idempotenc
         """INSERT INTO ledger_page_proposals (proposal_id, shop_id, status, version, content_hash, draft_json, extraction_json,
            image_sha256, idempotency_key, posted_batch_id, created_at, updated_at, expires_at)
            VALUES (?, ?, 'NEEDS_REVIEW', 1, ?, ?, ?, ?, ?, NULL, ?, ?, ?)""",
-        (proposal_id, DEMO_SHOP_ID, digest, draft.model_dump_json(),
+        (proposal_id, current_shop(), digest, draft.model_dump_json(),
          json.dumps({**extraction.model_dump(mode="json"), "notes": notes}), image_sha, idempotency_key,
          created.isoformat(), created.isoformat(), (created + timedelta(days=expiry_days())).isoformat()),
     )
@@ -129,7 +129,7 @@ def _insert(connection, draft: PageDraft, extraction: ExtractionView, idempotenc
 
 def _load(connection, proposal_id: str) -> sqlite3.Row:
     row = connection.execute(
-        "SELECT * FROM ledger_page_proposals WHERE shop_id = ? AND proposal_id = ?", (DEMO_SHOP_ID, proposal_id)
+        "SELECT * FROM ledger_page_proposals WHERE shop_id = ? AND proposal_id = ?", (current_shop(), proposal_id)
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Notebook page proposal not found in this demo shop.")
@@ -281,9 +281,9 @@ def _store_status(connection, proposal_id: str) -> PageView:
 
 def _customer_view(connection, customer_id: str) -> CustomerView:
     customer = connection.execute("SELECT customer_id, display_name FROM customers WHERE shop_id = ? AND customer_id = ?",
-                                  (DEMO_SHOP_ID, customer_id)).fetchone()
+                                  (current_shop(), customer_id)).fetchone()
     aliases = [r["alias"] for r in connection.execute(
-        "SELECT alias FROM customer_aliases WHERE shop_id = ? AND customer_id = ? ORDER BY alias", (DEMO_SHOP_ID, customer_id))]
+        "SELECT alias FROM customer_aliases WHERE shop_id = ? AND customer_id = ? ORDER BY alias", (current_shop(), customer_id))]
     return CustomerView(customer_id=customer["customer_id"], display_name=customer["display_name"], aliases=aliases)
 
 
@@ -292,7 +292,7 @@ def _exact_customers(connection, names: list[str]) -> list[str]:
     for name in names:
         for row in connection.execute(
             """SELECT DISTINCT customer_id FROM customer_aliases WHERE shop_id = ? AND alias_normalized = ?""",
-            (DEMO_SHOP_ID, normalize_alias(name)),
+            (current_shop(), normalize_alias(name)),
         ):
             if row["customer_id"] not in found:
                 found.append(row["customer_id"])
@@ -303,7 +303,7 @@ def _suggest_customers(connection, names: list[str]) -> list[str]:
     found: list[str] = []
     for name in names:
         words = f" {normalize_alias(name)} "
-        for row in connection.execute("SELECT customer_id, alias_normalized FROM customer_aliases WHERE shop_id = ?", (DEMO_SHOP_ID,)):
+        for row in connection.execute("SELECT customer_id, alias_normalized FROM customer_aliases WHERE shop_id = ?", (current_shop(),)):
             alias = row["alias_normalized"]
             if len(alias) >= 3 and (f" {alias} " in words or words.strip() in alias) and row["customer_id"] not in found:
                 found.append(row["customer_id"])
@@ -314,7 +314,7 @@ def _balance(connection, customer_id: str) -> int:
     return int(connection.execute(
         """SELECT COALESCE(SUM(CASE entry_type WHEN 'CREDIT' THEN amount_paise ELSE -amount_paise END), 0)
            FROM ledger_entries WHERE shop_id = ? AND customer_id = ? AND status = 'POSTED'""",
-        (DEMO_SHOP_ID, customer_id),
+        (current_shop(), customer_id),
     ).fetchone()[0])
 
 
@@ -344,7 +344,7 @@ def evaluate(connection, row: sqlite3.Row) -> PageView:
         customer_id = None
         if line.customer_id:
             exists = connection.execute("SELECT 1 FROM customers WHERE shop_id = ? AND customer_id = ?",
-                                        (DEMO_SHOP_ID, line.customer_id)).fetchone()
+                                        (current_shop(), line.customer_id)).fetchone()
             status = "SELECTED" if exists else "NOT_FOUND"
             customer_id = line.customer_id if exists else None
             if not exists:
@@ -382,7 +382,7 @@ def evaluate(connection, row: sqlite3.Row) -> PageView:
             duplicate = connection.execute(
                 """SELECT entry_id FROM ledger_entries WHERE shop_id = ? AND customer_id = ? AND entry_type = ? AND amount_paise = ?
                    AND substr(COALESCE(occurred_at, created_at), 1, 10) = ? LIMIT 1""",
-                (DEMO_SHOP_ID, customer_id, line.entry_type, line.amount_paise, line.entry_date.isoformat()),
+                (current_shop(), customer_id, line.entry_type, line.amount_paise, line.entry_date.isoformat()),
             ).fetchone()
             if duplicate:
                 add("POSSIBLE_DUPLICATE_ENTRY", "warning", f"A matching entry already exists ({duplicate['entry_id']}).")
@@ -493,12 +493,12 @@ def confirm_page(proposal_id: str, request: PageConfirm) -> PagePostingView:
                     display = line.name_latin or line.name_text
                     connection.execute(
                         "INSERT INTO customers(customer_id, shop_id, display_name, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?)",
-                        (customer_id, DEMO_SHOP_ID, display, f"{request.idempotency_key}:customer:{line.line_id}", stamp),
+                        (customer_id, current_shop(), display, f"{request.idempotency_key}:customer:{line.line_id}", stamp),
                     )
                     for alias in dict.fromkeys(n for n in (line.name_latin, line.name_text) if n):
                         connection.execute(
                             "INSERT INTO customer_aliases(alias_id, shop_id, customer_id, alias, alias_normalized) VALUES (?, ?, ?, ?, ?)",
-                            (f"alias_{uuid.uuid4().hex[:12]}", DEMO_SHOP_ID, customer_id, alias, normalize_alias(alias)),
+                            (f"alias_{uuid.uuid4().hex[:12]}", current_shop(), customer_id, alias, normalize_alias(alias)),
                         )
                     append_event(connection, event_type="CUSTOMER_CREATED", entity_type="CUSTOMER", entity_id=customer_id,
                                  source_event_id=f"{request.idempotency_key}:customer:{line.line_id}", source_channel="text",
@@ -514,7 +514,7 @@ def confirm_page(proposal_id: str, request: PageConfirm) -> PagePostingView:
             connection.execute(
                 """INSERT INTO ledger_entries (entry_id, shop_id, customer_id, entry_type, amount_paise, source_event_id,
                    idempotency_key, status, created_at, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?)""",
-                (entry_id, DEMO_SHOP_ID, customer_id, line.entry_type, line.amount_paise, source_event_id,
+                (entry_id, current_shop(), customer_id, line.entry_type, line.amount_paise, source_event_id,
                  f"{request.idempotency_key}:{line.line_id}", stamp, occurred),
             )
             append_event(connection, event_type=f"{line.entry_type}_POSTED", entity_type="LEDGER_ENTRY", entity_id=entry_id,
@@ -528,7 +528,7 @@ def confirm_page(proposal_id: str, request: PageConfirm) -> PagePostingView:
         connection.execute(
             """INSERT INTO ledger_page_postings (batch_id, shop_id, proposal_id, proposal_version, content_hash, entry_count,
                customers_created, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (batch_id, DEMO_SHOP_ID, proposal_id, row["version"], row["content_hash"], len(posted_rows), customers_created,
+            (batch_id, current_shop(), proposal_id, row["version"], row["content_hash"], len(posted_rows), customers_created,
              request.idempotency_key, stamp),
         )
         connection.execute("UPDATE ledger_page_proposals SET status = 'CONFIRMED', posted_batch_id = ?, updated_at = ? WHERE proposal_id = ?",
@@ -542,14 +542,14 @@ def _posting_view(connection, posting: sqlite3.Row, replay: bool = False) -> Pag
         """SELECT l.*, c.display_name, c.idempotency_key AS customer_key FROM ledger_entries l
            JOIN customers c ON c.shop_id = l.shop_id AND c.customer_id = l.customer_id
            WHERE l.shop_id = ? AND l.source_event_id LIKE ? ORDER BY l.rowid""",
-        (DEMO_SHOP_ID, prefix + "%"),
+        (current_shop(), prefix + "%"),
     ).fetchall()
     entries = []
     for entry in rows:
         balance = int(connection.execute(
             """SELECT COALESCE(SUM(CASE entry_type WHEN 'CREDIT' THEN amount_paise ELSE -amount_paise END), 0)
                FROM ledger_entries WHERE shop_id = ? AND customer_id = ? AND rowid <= ?""",
-            (DEMO_SHOP_ID, entry["customer_id"], connection.execute("SELECT rowid FROM ledger_entries WHERE entry_id = ?", (entry["entry_id"],)).fetchone()[0]),
+            (current_shop(), entry["customer_id"], connection.execute("SELECT rowid FROM ledger_entries WHERE entry_id = ?", (entry["entry_id"],)).fetchone()[0]),
         ).fetchone()[0])
         occurred = entry["occurred_at"]
         entries.append(PagePostedEntry(

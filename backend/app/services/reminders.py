@@ -35,7 +35,7 @@ from app.domain.reminders import (
     ShopSettingsView,
     TransitionView,
 )
-from app.services.database import DEMO_SHOP_ID, connect
+from app.services.database import connect, current_shop
 from app.services.events import append_event
 from app.services.suppliers import mask_phone
 
@@ -67,14 +67,14 @@ def now_utc() -> datetime:
 # --- Settings ---------------------------------------------------------------
 
 def _settings_row(connection: sqlite3.Connection) -> sqlite3.Row:
-    row = connection.execute("SELECT * FROM shop_settings WHERE shop_id = ?", (DEMO_SHOP_ID,)).fetchone()
+    row = connection.execute("SELECT * FROM shop_settings WHERE shop_id = ?", (current_shop(),)).fetchone()
     if row is None:
         connection.execute(
             """INSERT OR IGNORE INTO shop_settings (shop_id, timezone, reminder_overdue_days, quiet_hours_start, quiet_hours_end,
                reminder_min_interval_days, max_mock_sends_per_day, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (DEMO_SHOP_ID, *DEFAULTS.values(), now_utc().isoformat()),
+            (current_shop(), *DEFAULTS.values(), now_utc().isoformat()),
         )
-        row = connection.execute("SELECT * FROM shop_settings WHERE shop_id = ?", (DEMO_SHOP_ID,)).fetchone()
+        row = connection.execute("SELECT * FROM shop_settings WHERE shop_id = ?", (current_shop(),)).fetchone()
     return row
 
 
@@ -107,11 +107,11 @@ def update_settings(request: ShopSettingsUpdate) -> ShopSettingsView:
             """UPDATE shop_settings SET timezone = ?, reminder_overdue_days = ?, quiet_hours_start = ?, quiet_hours_end = ?,
                reminder_min_interval_days = ?, max_mock_sends_per_day = ?, updated_at = ? WHERE shop_id = ?""",
             (request.timezone, request.reminder_overdue_days, request.quiet_hours_start, request.quiet_hours_end,
-             request.reminder_min_interval_days, request.max_mock_sends_per_day, stamp, DEMO_SHOP_ID),
+             request.reminder_min_interval_days, request.max_mock_sends_per_day, stamp, current_shop()),
         )
         settings_key = f"settings:{uuid.uuid4().hex[:12]}"
         append_event(
-            connection, event_type="REMINDER_SETTINGS_UPDATED", entity_type="SHOP", entity_id=DEMO_SHOP_ID,
+            connection, event_type="REMINDER_SETTINGS_UPDATED", entity_type="SHOP", entity_id=current_shop(),
             source_event_id=settings_key, source_channel="text", source_utterance=None, status="POSTED",
             summary=(f"Reminder settings: {request.reminder_overdue_days}-day threshold, {request.timezone}, quiet "
                      f"{request.quiet_hours_start}-{request.quiet_hours_end}, every {request.reminder_min_interval_days}+ days."),
@@ -143,7 +143,7 @@ def normalize_indian_mobile(value: str) -> str | None:
 
 def _require_customer(connection: sqlite3.Connection, customer_id: str) -> sqlite3.Row:
     customer = connection.execute(
-        "SELECT customer_id, display_name FROM customers WHERE shop_id = ? AND customer_id = ?", (DEMO_SHOP_ID, customer_id)
+        "SELECT customer_id, display_name FROM customers WHERE shop_id = ? AND customer_id = ?", (current_shop(), customer_id)
     ).fetchone()
     if customer is None:
         raise HTTPException(status_code=404, detail="Customer not found in this demo shop.")
@@ -165,7 +165,7 @@ def _latest_consents(connection: sqlite3.Connection, customer_id: str) -> dict[s
     for row in connection.execute(
         """SELECT * FROM customer_contact_consents WHERE shop_id = ? AND customer_id = ?
            ORDER BY created_at, rowid""",
-        (DEMO_SHOP_ID, customer_id),
+        (current_shop(), customer_id),
     ):
         latest[row["channel"]] = row
     return latest
@@ -202,7 +202,7 @@ def record_consent(customer_id: str, request: ConsentWrite) -> ConsentView:
             """INSERT INTO customer_contact_consents (consent_id, shop_id, customer_id, channel, contact_value, contact_verified,
                verification_method, consent_status, evidence_note, recorded_by, idempotency_key, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'merchant', ?, ?)""",
-            (consent_id, DEMO_SHOP_ID, customer_id, request.channel, contact, int(request.contact_verified),
+            (consent_id, current_shop(), customer_id, request.channel, contact, int(request.contact_verified),
              request.verification_method, request.consent_status, request.evidence_note.strip(), request.idempotency_key,
              now_utc().isoformat()),
         )
@@ -224,7 +224,7 @@ def get_consent(customer_id: str) -> CustomerConsentSummary:
         _require_customer(connection, customer_id)
         latest = _latest_consents(connection, customer_id)
         count = connection.execute(
-            "SELECT COUNT(*) FROM customer_contact_consents WHERE shop_id = ? AND customer_id = ?", (DEMO_SHOP_ID, customer_id)
+            "SELECT COUNT(*) FROM customer_contact_consents WHERE shop_id = ? AND customer_id = ?", (current_shop(), customer_id)
         ).fetchone()[0]
     return CustomerConsentSummary(customer_id=customer_id, channels=[_consent_view(row) for row in latest.values()], record_count=count)
 
@@ -238,7 +238,7 @@ def open_credits(connection: sqlite3.Connection, customer_id: str, zone: ZoneInf
         """SELECT entry_id, entry_type, amount_paise, COALESCE(occurred_at, created_at) AS created_at FROM ledger_entries
            WHERE shop_id = ? AND customer_id = ? AND status = 'POSTED'
            ORDER BY COALESCE(occurred_at, created_at), rowid""",
-        (DEMO_SHOP_ID, customer_id),
+        (current_shop(), customer_id),
     ):
         if row["entry_type"] == "CREDIT":
             queue.append({"entry_id": row["entry_id"], "created_at": row["created_at"],
@@ -264,7 +264,7 @@ def open_credits(connection: sqlite3.Connection, customer_id: str, zone: ZoneInf
 
 def _active_reminders(connection: sqlite3.Connection, customer_id: str, channel: str | None = None) -> list[str]:
     rows = connection.execute(
-        "SELECT reminder_id, channel FROM reminders WHERE shop_id = ? AND customer_id = ?", (DEMO_SHOP_ID, customer_id)
+        "SELECT reminder_id, channel FROM reminders WHERE shop_id = ? AND customer_id = ?", (current_shop(), customer_id)
     ).fetchall()
     return [row["reminder_id"] for row in rows
             if (channel is None or row["channel"] == channel) and _status(connection, row["reminder_id"]) in ACTIVE]
@@ -303,7 +303,7 @@ def _evaluate_customer(connection, customer, settings, as_of: datetime) -> tuple
     if _active_reminders(connection, customer["customer_id"]):
         reasons.append("REMINDER_ALREADY_ACTIVE")
     last = connection.execute(
-        "SELECT MAX(created_at) FROM reminders WHERE shop_id = ? AND customer_id = ?", (DEMO_SHOP_ID, customer["customer_id"])
+        "SELECT MAX(created_at) FROM reminders WHERE shop_id = ? AND customer_id = ?", (current_shop(), customer["customer_id"])
     ).fetchone()[0]
     if last and as_of - datetime.fromisoformat(last) < timedelta(days=settings["reminder_min_interval_days"]):
         reasons.append("REMINDED_RECENTLY")
@@ -323,7 +323,7 @@ def _customers_with_ledger(connection: sqlite3.Connection) -> list[sqlite3.Row]:
         """SELECT DISTINCT c.customer_id, c.display_name FROM customers c
            JOIN ledger_entries l ON l.shop_id = c.shop_id AND l.customer_id = c.customer_id
            WHERE c.shop_id = ? ORDER BY c.display_name""",
-        (DEMO_SHOP_ID,),
+        (current_shop(),),
     ).fetchall()
 
 
@@ -377,7 +377,7 @@ def run_eligibility(as_of: datetime | None = None) -> EligibilityRunResult:
                 """INSERT INTO reminders (reminder_id, shop_id, customer_id, channel, consent_id, anchor_entry_id,
                    oldest_unpaid_since, oldest_unpaid_local_date, overdue_days, outstanding_paise, dedupe_key, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (reminder_id, DEMO_SHOP_ID, customer["customer_id"], consent["channel"], consent["consent_id"], anchor.entry_id,
+                (reminder_id, current_shop(), customer["customer_id"], consent["channel"], consent["consent_id"], anchor.entry_id,
                  anchor.created_at.isoformat(), anchor.local_date.isoformat(), row.overdue_days, row.balance_due_paise,
                  dedupe_key, moment.isoformat()),
             )
@@ -391,7 +391,7 @@ def run_eligibility(as_of: datetime | None = None) -> EligibilityRunResult:
 
 def _cancel_settled(connection: sqlite3.Connection) -> list[str]:
     cancelled = []
-    customers = {row["customer_id"] for row in connection.execute("SELECT DISTINCT customer_id FROM reminders WHERE shop_id = ?", (DEMO_SHOP_ID,))}
+    customers = {row["customer_id"] for row in connection.execute("SELECT DISTINCT customer_id FROM reminders WHERE shop_id = ?", (current_shop(),))}
     for customer_id in customers:
         cancelled += cancel_reminders_if_settled(connection, customer_id)
     return cancelled
@@ -402,7 +402,7 @@ def cancel_reminders_if_settled(connection: sqlite3.Connection, customer_id: str
     balance = connection.execute(
         """SELECT COALESCE(SUM(CASE entry_type WHEN 'CREDIT' THEN amount_paise ELSE -amount_paise END), 0)
            FROM ledger_entries WHERE shop_id = ? AND customer_id = ? AND status = 'POSTED'""",
-        (DEMO_SHOP_ID, customer_id),
+        (current_shop(), customer_id),
     ).fetchone()[0]
     if balance > 0:
         return []
@@ -462,12 +462,12 @@ def _current_balance(connection, customer_id: str) -> int:
     return int(connection.execute(
         """SELECT COALESCE(SUM(CASE entry_type WHEN 'CREDIT' THEN amount_paise ELSE -amount_paise END), 0)
            FROM ledger_entries WHERE shop_id = ? AND customer_id = ? AND status = 'POSTED'""",
-        (DEMO_SHOP_ID, customer_id),
+        (current_shop(), customer_id),
     ).fetchone()[0])
 
 
 def _load(connection, reminder_id: str) -> sqlite3.Row:
-    row = connection.execute("SELECT * FROM reminders WHERE shop_id = ? AND reminder_id = ?", (DEMO_SHOP_ID, reminder_id)).fetchone()
+    row = connection.execute("SELECT * FROM reminders WHERE shop_id = ? AND reminder_id = ?", (current_shop(), reminder_id)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Reminder not found in this demo shop.")
     return row
@@ -557,7 +557,7 @@ def mock_send(reminder_id: str, request: ReminderAction) -> ReminderView:
         sent_today = connection.execute(
             """SELECT COUNT(*) FROM reminder_transitions t JOIN reminders r ON r.reminder_id = t.reminder_id
                WHERE r.shop_id = ? AND t.to_status = 'SENT_MOCK' AND t.created_at >= ?""",
-            (DEMO_SHOP_ID, day_start),
+            (current_shop(), day_start),
         ).fetchone()[0]
         if sent_today >= settings["max_mock_sends_per_day"]:
             raise HTTPException(status_code=429, detail={"code": "DAILY_LIMIT", "limit": settings["max_mock_sends_per_day"]})
@@ -619,7 +619,7 @@ def list_reminders(status: str | None = None, limit: int = 50) -> list[ReminderV
     with connect() as connection:
         ids = [row[0] for row in connection.execute(
             "SELECT reminder_id FROM reminders WHERE shop_id = ? ORDER BY created_at DESC LIMIT ?",
-            (DEMO_SHOP_ID, min(max(limit, 1), 200)),
+            (current_shop(), min(max(limit, 1), 200)),
         )]
         views = [_reminder_view(connection, reminder_id) for reminder_id in ids]
     return [view for view in views if status is None or view.status == status]
