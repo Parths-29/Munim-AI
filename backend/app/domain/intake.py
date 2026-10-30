@@ -270,3 +270,17 @@ class UnitConversionView(StrictModel):
     base_unit: str
     base_units_per_unit: int
     created_at: datetime
+
+
+class InwardInterpretRequest(StrictModel):
+    utterance: str = Field(min_length=1, max_length=240)
+    source_channel: Literal["text", "voice"] = "text"
+    idempotency_key: str = Field(min_length=8, max_length=150)
+
+
+class InwardInterpretResponse(StrictModel):
+    status: Literal["proposal", "clarification"]
+    message: str | None = None
+    parsed_by: str | None
+    proposal: ProposalView | None
+    writes_performed: Literal[False] = False

@@ -362,3 +362,11 @@
 - **Posting (N3):** `POST /invoices/proposals/{id}/confirm` requires the current version and content hash, revalidates on the server, requires an explicit `paid_now_paise`, then appends the receipt, movements, `INVOICE_CREDIT` payable, and events in one transaction. An injected failure after the movements and payable were inserted left zero rows in all three tables.
 - **Checks:** `python -m pytest -q tests` → 36 passed (temp DB per test; fake/failing providers only).
 - **Limitations:** Live Gemini vision has not been exercised in this run. The provider path is covered with fakes, and recent live Gemini calls returned 503/timeouts. Quantities are whole numbers in the product's base unit. Proposal drafts are working state (updated in place) with an append-only revision history.
+
+### 2026-10-30 — Next phase N4: quick voice inward
+
+- **Parser:** new `inward_parser.py` parses one delivery deterministically (supplier phrase, multiple items, digits or Hindi/English number words, known unit words). An optional Gemini fallback is accepted only when every span is verbatim in the utterance. Spoken prices trigger clarification instead of parsing.
+- **Flow:** `POST /inventory/inward/proposals` creates a `voice_inward`/`text_inward` proposal that reuses the N2 validation and N3 atomic confirm. The PRD example `Doodh wale se 15 packet Amul Taaza aur 10 dahi liye.` gives two lines: Amul Taaza 15 packet (matched) and dahi 10 with a blocking `UNIT_MISSING` question. The supplier label stays unresolved. After review, confirm adds stock only (`NOT_SUPPLIED`, zero payable rows). Adding a verified total plus supplier creates exactly one `INVOICE_CREDIT`.
+- **Test isolation fix:** the test fixture now blocks all `urllib` network calls and clears the Gemini key in every module that reads it. Before this fix, one earlier Phase 4 run may have sent a synthetic test phrase to Gemini through the local `.env` key. Nothing was persisted from it.
+- **Checks:** `python -m pytest -q tests` → 47 passed with network blocked.
+- **Limitations:** Product names containing `aur`/`and` would be split; the merchant can correct this in review. Quantities must be whole numbers.

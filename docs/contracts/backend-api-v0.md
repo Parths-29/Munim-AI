@@ -197,6 +197,16 @@ Replaying the same key returns the same receipt with `idempotent_replay: true`. 
 
 On-hand stock is now `SUM(physical-count deltas) + SUM(receipt movements)`, and a later physical count computes its delta against that combined figure.
 
+## Quick inward for informal deliveries (v0.9, Phase 4)
+
+`POST /inventory/inward/proposals` takes `{utterance, source_channel: "text"|"voice", idempotency_key}`. Pass the merchant-reviewed transcript from `/speech/transcribe` or typed text. One delivery per request. It never writes stock.
+
+- A deterministic Hinglish/English parser runs first. It extracts an optional supplier phrase (`X se …`, `X ne …`, `from X, …`), splits items on `aur`/`and`/commas, and reads each item as `quantity [unit] product` or `product quantity [unit]`, with digits or common Hindi/English number words. The trailing "received" verbs (`liye`, `aaye`, `mila`, …) mean goods arrived. They do not imply payment.
+- If the deterministic parse fails, optional Gemini assist may return spans. Every quantity, unit, product, and supplier span must appear verbatim in the utterance, then it is re-validated; otherwise the response asks for clarification. Disable it with `MUNIM_INWARD_LLM=0`. Outage or missing key returns a clarification.
+- Spoken prices (`₹`, `rupaye`, `rupees`) are not parsed. The response asks the merchant to add costs in review instead.
+- The response is `{status: "proposal"|"clarification", message, parsed_by, proposal, writes_performed: false}`. The proposal uses the same shape and validation as invoice proposals (`source_kind` `voice_inward`/`text_inward`). A missing unit (for example `10 dahi`) is a blocking `UNIT_MISSING` issue that asks for the unit and lists `unit_options`. It is never assumed. Generic supplier phrases such as “doodh wale” stay an unresolved label.
+- `GET /inventory/inward/proposals/{id}`, `POST …/revise`, `POST …/reject`, and `POST …/confirm` behave as described for invoices. Without a verified `total_paise`, confirm records **stock only** (`payable_status: "NOT_SUPPLIED"`), and a non-zero `paid_now_paise` is rejected. A payable is created only if the merchant revises in a total, selects the supplier, and confirms with an explicit paid-now amount.
+
 ## Explicitly not implemented in v0.5
 
 Live action publication, authentication, and production payment integration. Voice transcription is an input convenience and is not guaranteed to recognize names or spoken amounts correctly; the transcript must be reviewed. The facts-only explanation and command interpretation endpoints do not imply live Paytm connectivity or autonomous writes.

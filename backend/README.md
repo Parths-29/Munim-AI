@@ -73,6 +73,8 @@ For Expo Web, local CORS origins default to `http://localhost:8081` and `http://
 | `POST` | `/invoices/proposals/{id}/revise`, `/reject` | Merchant edits (versioned) or rejection. |
 | `POST` | `/invoices/proposals/{id}/confirm` | Atomic posting: stock movements + supplier payable (total minus paid now) + events. |
 | `GET` | `/receipts/{id}` | Read a posted stock receipt. |
+| `POST` | `/inventory/inward/proposals` | Reviewed transcript/text → stock-receipt draft or clarification (no writes). |
+| `GET`/`POST` | `/inventory/inward/proposals/{id}`, `/revise`, `/reject`, `/confirm` | Review and confirm an inward delivery; stock only unless a verified total is added. |
 
 Customer, ledger, and inventory writes use a stable `idempotency_key`, a unique `source_event_id`, and explicit `confirmed` state. Use the accepted command ID as the idempotency key. Replaying either key or source event has one effect; reusing one for different operation details returns `409 Conflict`. Payment endpoints have their own documented event and confirmation rules below.
 
