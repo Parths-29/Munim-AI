@@ -7,9 +7,9 @@
 **Last checked:** 30 October 2026  
 **Active work branch:** `codex/sarvam-voice-input`, based on `codex/mock-action-outcomes` at `5a990b5`
 **Base lineage:** `origin/main` at `318863e` (includes merged PR #10), plus pushed mock-action tracking milestone.
-**Latest pushed milestone before current work:** `5a990b5` — `docs: record mock action outcome milestone`
-**Working tree:** voice-input changes are in progress on this branch.
-**Merge status:** PRs #7–#10 are in `main`; mock-action tracking and the current voice-input work are on pushed feature branches, with no PR opened by Codex.
+**Latest pushed commit:** `91f62cc` — `feat: add Sarvam voice input with merchant confirmation`
+**Working tree:** clean after the voice-input milestone.
+**Merge status:** PRs #7–#10 are in `main`; mock-action tracking and voice input are pushed feature branches, with no PR opened by Codex.
 
 ### Product and scope
 
@@ -184,7 +184,7 @@
 
 - **Goal:** Let a merchant speak a short Hindi/Hinglish request, review the transcript, and use the existing safe command path.
 - **Changes:** Added `POST /speech/transcribe` using Sarvam `saaras:v4` in transliteration mode with merchant/product keyterms; credentials stay server-side and short audio is not persisted. Added Expo Audio microphone recording with permission text and a 20-second stop, cache-file deletion after upload, transcript language label, and editable transcript in the command input. Sending a transcript enters the existing deterministic parser; any write still requires the normal preview/confirmation. Voice source is carried into ledger/customer/stockout records.
-- **Branch/base:** `codex/sarvam-voice-input`, based on `codex/mock-action-outcomes` at `5a990b5` (which itself includes main through `318863e`).
+- **Branch/base:** `codex/sarvam-voice-input`, based on `codex/mock-action-outcomes` at `5a990b5` (which itself includes main through `318863e`); commit `91f62cc` pushed to `origin`.
 - **Checks:** `python -m compileall -q app` passed; FastAPI OpenAPI includes `/speech/transcribe`; mocked Sarvam adapter check confirmed multipart fields, server-side key header, and response mapping without a live API request. A parser check confirmed a transliterated `Raju bhai ka 50 rupaye udhaar likh do` becomes a ₹50 preview for the exact `Raju bhai` alias. `npm run typecheck` passed. Android Expo export passed (722 modules). `git diff --check` passed.
 - **Not yet verified:** Actual Sarvam account/credential connectivity and recording/transcription on a physical phone. No live API call was made to avoid consuming quota; type/build checks do not prove microphone or provider behavior on-device.
 - **Limitations:** The fixed parser supports a narrow Romanized Hindi/Hinglish command set and numeric amounts; unclear or unsupported transcripts stop for manual correction. Recording cap is 20 seconds in the app; the backend also caps uploads at 12 MB. Text remains available if voice is unavailable.
