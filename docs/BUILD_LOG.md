@@ -318,3 +318,11 @@
 
 - The user confirmed the physical count of 0 packs for Maggi was intentional and reported the flow is working as expected.
 - No corrective inventory write was made. The browser count flow is accepted; the distinct stockout-observation action remains unverified in this run.
+
+### 2026-10-30 — Merchant brief audit and editable mock action
+
+- **Read-only brief check:** Five synthetic facts and their evidence IDs load. The facts-only explanation returned a deterministic fallback after the Gemini timeout: four evidence IDs and the bounded `counter_notice` action type. The latest-action endpoint is empty; no merchant approval was created by this audit.
+- **Merchant control improvement:** The browser action card now has an editable 240-character action field. Before approval, the merchant can change the suggested text; after approval, the card displays the exact saved text and the mock-only scheduled observation. Approval still requires the merchant to click the explicit button.
+- **Default counter notice:** The server-owned fallback draft is now customer-facing copy: “Ask us about this week's in-store offers. UPI accepted.” This is editable, not automatically sent or published.
+- **Checks:** Mobile TypeScript typecheck passed. The facts/explanation endpoint returned HTTP 200 with deterministic fallback and no mutation. No mock action has been approved yet.
+- **Next:** In the browser, open “Aaj kaisa raha?”, edit or keep the notice, and click “Approve & Track for 7 Days (Mock).” Then verify the card says nothing was published and the outcome is scheduled. Phone/LAN rehearsal remains after that.

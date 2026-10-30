@@ -57,7 +57,7 @@ The larger KiranaOS product vision includes delivery, supplier workflows, offlin
 
 ## Build status and next steps
 
-The current phase is integrated demo readiness. The browser payment-review journey is now verified: a successful synthetic ₹300 payment was manually allocated after merchant confirmation, the review queue cleared, and Raju's derived due ended at ₹250. Remaining browser acceptance: exercise stockout vs. physical count, load the facts brief and approve a mock shop-side action, then rehearse the complete flow from a clean synthetic seed. Phone-to-laptop networking remains unverified.
+The current phase is integrated demo readiness. The browser payment-review journey is verified: a successful synthetic ₹300 payment was manually allocated after merchant confirmation, the review queue cleared, and Raju's derived due ended at ₹250. The user intentionally counted Maggi at zero; a separate stockout observation has not been recorded in this run. The synthetic facts brief loads with deterministic fallback, and the mock action text is editable, but merchant approval remains pending. Phone-to-laptop networking and the complete clean-seed rehearsal remain.
 
 Gemini is configured in the local ignored `.env`, but recent upstream requests returned HTTP 503 or timed out; deterministic explanations and command clarification remain available. Continue voice recognition work only after the core browser path is stable. Integrate the fraud model only after a clean run and a clear explanation of its research limitations.
 

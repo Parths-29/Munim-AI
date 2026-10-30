@@ -95,10 +95,10 @@ def generate_deterministic_fallback(
 
 
 def _action_copy(action_type: str) -> str:
-    """Keep actions bounded and merchant-side; model prose never becomes an instruction."""
+    """Return a server-owned editable draft; model prose never becomes the action text."""
     if action_type == "qr_offer_mock":
         return "Draft a QR-linked offer for the merchant to review. Demo only; it is not published."
-    return "Draft a counter notice for the merchant to review. Demo only; it is not published."
+    return "Ask us about this week's in-store offers. UPI accepted."
 
 
 def _collect_allowed_numbers(facts_view: BusinessFactsView) -> set[float]:

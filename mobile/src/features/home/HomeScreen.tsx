@@ -124,6 +124,7 @@ export default function HomeScreen() {
   const [insightsBrief, setInsightsBrief] = useState<FactsResponse | null>(null);
   const [aiExplanation, setAiExplanation] = useState<BriefExplanationResponse | null>(null);
   const [mockAction, setMockAction] = useState<MockActionResponse | null>(null);
+  const [mockActionDraft, setMockActionDraft] = useState('');
   const approvalKeyRef = useRef<string | null>(null);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(audioRecorder);
@@ -147,6 +148,10 @@ export default function HomeScreen() {
       setInsightsBrief(factsData);
       setAiExplanation(explanationData);
       setMockAction(latestAction);
+      setMockActionDraft(
+        latestAction?.action_text ?? explanationData?.proposed_action ??
+          'Put up a counter notice inviting shoppers to ask about current in-store offers. Demo only; not published.',
+      );
       approvalKeyRef.current = null;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -158,17 +163,23 @@ export default function HomeScreen() {
 
   const handleApproveMockAction = async () => {
     if (loading) return;
+    const actionText = mockActionDraft.trim();
+    if (!actionText) {
+      Alert.alert('Action Text Required', 'Write the counter notice or shop-side action you want to track.');
+      return;
+    }
     if (!approvalKeyRef.current) approvalKeyRef.current = `mock_action_${Date.now()}`;
     setLoading(true);
     try {
       const approved = await approveMockAction({
         persona: 'kirana',
         action_type: aiExplanation?.action_type ?? 'counter_notice',
-        action_text: aiExplanation?.proposed_action ?? 'Optional shop-side experiment. Choose the item and offer yourself; UPI trends do not identify slow-moving products.',
+        action_text: actionText,
         confirmed: true,
         idempotency_key: approvalKeyRef.current,
       });
       setMockAction(approved);
+      setMockActionDraft(approved.action_text);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       Alert.alert('Could Not Record Mock Approval', message);
@@ -1106,8 +1117,7 @@ export default function HomeScreen() {
                     </View>
                   </View>
                   <Text style={styles.mockActionDesc}>
-                    {aiExplanation?.proposed_action ??
-                      'Optional shop-side experiment. UPI trends cannot identify which products are slow-moving; choose the item and offer yourself:'}
+                    Review or edit this shop-side notice. Approval saves a mock 7-day tracking record only; it is never published or sent.
                   </Text>
                   {aiExplanation?.action_type && (
                     <View style={styles.actionTypeBadge}>
@@ -1115,6 +1125,21 @@ export default function HomeScreen() {
                         Action type: {aiExplanation.action_type}
                       </Text>
                     </View>
+                  )}
+
+                  <Text style={styles.actionDraftLabel}>Counter notice / action text</Text>
+                  <TextInput
+                    style={styles.actionDraftInput}
+                    value={mockAction ? mockAction.action_text : mockActionDraft}
+                    onChangeText={setMockActionDraft}
+                    editable={!mockAction && !loading}
+                    multiline
+                    maxLength={240}
+                    placeholder="Example: Ask us about this week's in-store offers."
+                    accessibilityLabel="Editable mock merchant action text"
+                  />
+                  {!mockAction && (
+                    <Text style={styles.actionDraftCount}>{mockActionDraft.length}/240 characters</Text>
                   )}
 
                   {mockAction ? (
@@ -1126,9 +1151,9 @@ export default function HomeScreen() {
                     </View>
                   ) : (
                     <TouchableOpacity
-                      style={[styles.approveBtn, loading && { opacity: 0.6 }]}
+                      style={[styles.approveBtn, (loading || !mockActionDraft.trim()) && { opacity: 0.6 }]}
                       onPress={handleApproveMockAction}
-                      disabled={loading}
+                      disabled={loading || !mockActionDraft.trim()}
                     >
                       {loading ? <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 6 }} /> :
                         <Ionicons name="hand-right-outline" size={16} color="#ffffff" style={{ marginRight: 6 }} />}
@@ -1450,6 +1475,20 @@ const styles = StyleSheet.create({
   mockBadge: { backgroundColor: '#e2e3e5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   mockBadgeText: { fontSize: 9, fontWeight: '700', color: '#383d41' },
   mockActionDesc: { fontSize: 11, color: '#6c757d', marginBottom: 6 },
+  actionDraftLabel: { fontSize: 11, fontWeight: '700', color: '#495057', marginBottom: 4 },
+  actionDraftInput: {
+    minHeight: 64,
+    borderWidth: 1,
+    borderColor: '#adb5bd',
+    borderRadius: 6,
+    padding: 9,
+    backgroundColor: '#ffffff',
+    color: '#212529',
+    fontSize: 12,
+    lineHeight: 17,
+    textAlignVertical: 'top',
+  },
+  actionDraftCount: { fontSize: 10, color: '#6c757d', textAlign: 'right', marginTop: 3, marginBottom: 6 },
   actionTypeBadge: {
     backgroundColor: '#d1ecf1',
     paddingHorizontal: 8,

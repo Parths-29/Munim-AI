@@ -40,7 +40,7 @@ This is the current phase tracker for the hackathon prototype. Keep the Git work
 **Status: Implemented with deterministic fallback.**
 
 - Business facts are computed from the synthetic payment fixture and include evidence, windows, and caveats.
-- Gemini may explain only supplied facts; invalid or unavailable model output falls back to deterministic copy.
+- Gemini may explain only supplied facts; invalid or unavailable model output falls back to deterministic copy. The proposed merchant-side counter notice is editable before approval, and the saved text is displayed with an explicit mock/not-published label.
 - Mock shop-side actions require approval and are never published. Outcome comparisons remain observational and do not claim causality.
 - The current Gemini request returned HTTP 503, so the deterministic path is the active path until provider access succeeds. MongoDB connectivity is separate; the app uses SQLite.
 
@@ -53,9 +53,10 @@ This is the current phase tracker for the hackathon prototype. Keep the Git work
 1. **Passed (service-level):** Created a clean Phase 5 synthetic database with Raju opening due ₹500 and Maggi stock 12; preserved the previous preview database separately.
 2. **Passed (isolated logic rehearsal):** Confirmed ₹50 credit, ₹300 unmatched payment review and merchant-confirmed allocation, ending balance ₹250; stockout did not change stock before count; confirmed count set stock to 10; five facts, deterministic explanation, and scheduled mock action all worked.
 3. **Passed (browser-backed payment review):** A successful synthetic ₹300 event was merchant-confirmed and allocated; the review queue is empty, the derived Raju due is ₹250, and the timeline records the repayment. An earlier over-balance attempt was rejected without a ledger write.
-4. **Browser inventory count passed; stockout observation not separately exercised:** The user confirmed Maggi's physical count of 0 is intentional; current on-hand is 0. No stockout-observation event is present, so that separate action has not been verified in the browser. Remaining browser work is to load the facts brief, review its Gemini/deterministic status, and approve one mock shop-side action.
-5. **Remaining (environment/demo):** Verify both services start from documented setup, check phone-to-laptop network access, and rehearse the complete scripted journey from a clean synthetic seed.
-6. Freeze a known-good branch/commit and keep the demo script honest about synthetic data, deterministic fallback, mock publishing, and missing live Paytm integration.
+4. **Browser inventory count passed; stockout observation not separately exercised:** The user confirmed Maggi's physical count of 0 is intentional; current on-hand is 0. No stockout-observation event is present, so that separate action has not been verified in the browser.
+5. **Growth brief verified read-only; approval pending:** Five synthetic facts and a four-evidence deterministic explanation load in 8.2 seconds. No action is approved yet. The counter notice is editable before approval; the saved text and 7-day scheduled outcome remain mock-only.
+6. **Remaining (environment/demo):** Approve one mock action in the browser, verify the stored text and scheduled outcome, verify both services start from documented setup, check phone-to-laptop network access, and rehearse the complete scripted journey from a clean synthetic seed.
+7. Freeze a known-good branch/commit and keep the demo script honest about synthetic data, deterministic fallback, mock publishing, and missing live Paytm integration.
 
 **Completion gate:** The complete scripted journey works from a clean seed without manual database edits, every financial write has a confirmation step, and all claims match observed behavior.
 
