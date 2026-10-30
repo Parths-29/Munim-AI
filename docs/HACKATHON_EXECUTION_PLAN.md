@@ -4,15 +4,15 @@ This is the current phase tracker for the hackathon prototype. Keep the Git work
 
 ## Phase 1 — Merchant command and ledger
 
-**Status: Implemented; voice end-to-end acceptance is still pending.**
+**Status: Implemented; read-only voice acceptance passed, voice-write acceptance pending.**
 
 - Text and Sarvam voice input enter the bounded deterministic command parser.
 - Customer/product aliases are resolved exactly; ambiguity or missing details stops for clarification.
 - Credit, repayment, and stockout writes show a preview, require merchant confirmation, and use idempotency keys.
 - Balances are derived from append-only ledger entries; repayments cannot exceed outstanding balance.
-- Recent voice recordings reached Sarvam successfully. A transcript punctuation bug was fixed, but the local database has no voice-tagged write yet.
+- Recent voice recordings reached Sarvam successfully. The read-only request `Raju bhai ka balance batao` transcribed, resolved the exact `Raju bhai` alias, and fetched the balance. It correctly created no ledger entry.
 
-**Exit gate:** Speak a read-only balance request, confirm the transcript and customer resolve correctly, then confirm one synthetic credit and verify its amount and source in the timeline/database.
+**Exit gate:** Read-only voice request and exact customer resolution are verified. Still confirm one synthetic credit from voice and verify its amount/source in the timeline/database; no voice-tagged write has been made yet.
 
 ## Phase 2 — Shop memory: inventory and timeline
 
@@ -49,7 +49,7 @@ This is the current phase tracker for the hackathon prototype. Keep the Git work
 
 **Status: In progress; this is the current phase.**
 
-1. Complete the Phase 1 voice acceptance gate on the current browser or an Android phone.
+1. Complete the remaining Phase 1 voice-write acceptance gate on the current browser or an Android phone.
 2. Rehearse the text command path, stock observation/count, payment review, business brief, and mock action against a clean synthetic database.
 3. Verify both services start from the documented setup and the phone can reach the backend over the demo network.
 4. Freeze a known-good branch/commit and keep the demo script honest about synthetic data, deterministic fallback, mock publishing, and missing live Paytm integration.

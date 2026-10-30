@@ -243,3 +243,10 @@
 - **Current phase:** Phase 5, integrated demo readiness. The immediate acceptance item is one clean read-only voice command after the punctuation fix; a voice-originated write has not yet been confirmed in the local demo database.
 - **Limitations:** Gemini is still unauthenticated and the app uses deterministic fallback; MongoDB is not integrated into this SQLite prototype; no real Paytm feed is connected.
 - **Next:** Finish the voice acceptance gate, then rehearse the remaining flows against a clean synthetic seed and record any failures as small follow-up tasks.
+
+### 2026-10-30 — Read-only voice request verified end to end
+
+- **Evidence:** Local backend logged `POST /speech/transcribe` HTTP 200, `GET /customers/resolve?query=Raju bhai` HTTP 200, and `GET /ledger/customers/{id}/balance` HTTP 200 for the user's latest voice attempt.
+- **Outcome:** Sarvam transcript, punctuation cleanup, exact alias resolution, and read-only balance retrieval all worked. The synthetic database remains unchanged by this read; it still has one text-sourced ₹50 credit and zero voice-originated ledger events.
+- **Phase status:** Phase 1's read-only voice gate is passed. The remaining gate is one merchant-previewed and confirmed synthetic voice write with correct `source_channel=voice` attribution. Phase 5 remains in progress.
+- **Next:** If the user wants to complete the voice-write gate, use a small synthetic credit command, inspect the preview, and confirm it only after verifying the customer and amount. Then check the persisted event source and balance.
