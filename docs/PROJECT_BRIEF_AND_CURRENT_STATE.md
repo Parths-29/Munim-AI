@@ -2,10 +2,14 @@
 
 **Purpose:** Give a teammate, judge, or new coding agent enough context to understand the problem, the product decisions, what is implemented, what has been verified, and how to continue without relying on chat history.
 
-**Current snapshot:** 2026-10-30  
-**Repository:** `Parths-29/Munim-AI`  
-**Active branch:** `codex/sarvam-voice-input`  
-**Implementation snapshot commit:** `f84584b` — `docs: record command summary endpoint verification`  
+**Current snapshot:** 2026-10-30
+
+**Repository:** `Parths-29/Munim-AI`
+
+**Active branch:** `codex/sarvam-voice-input`
+
+**Implementation snapshot commit:** `f84584b` — `docs: record command summary endpoint verification`
+
 **Product status:** Working local prototype using synthetic shop/payment data. Integrated demo readiness is still in progress.
 
 > The project name Munim-AI describes the merchant-facing copilot. KiranaOS describes its structured shop memory and APIs. This is a hackathon prototype; it is not connected to Paytm production systems and does not process real payments.
