@@ -5,9 +5,9 @@
 ## Current status snapshot
 
 **Last checked:** 30 October 2026  
-**Active work branch:** `codex/explainer-hardening` at `6ce832d`  
-**Base:** `origin/main` at `12f8491`  
-**Working tree:** clean at the last local check.  
+**Active work branch:** `codex/explainer-hardening` at `6ce832d`
+**Base:** `origin/main` at `12f8491`
+**Working tree:** clean at the last local check.
 **Merge status:** Antigravity’s explainer work is merged into `main` in PR #6. The hardening changes (`85526fb`) and handoff docs (`6ce832d`) are pushed to this branch and are not in `main`; a PR has not yet been opened for them. A separate remote branch, `antigravity/handoff-audit` at `b813ac6`, adds a longer audit version of this log only.
 
 ### Product and scope
