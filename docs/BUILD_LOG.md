@@ -227,3 +227,11 @@
 - **Checks:** Mobile `npm run typecheck` and backend `python -m compileall -q app` passed. A focused in-memory route check confirmed `audio/webm;codecs=opus`, `video/webm`, and `application/octet-stream` plus a `.webm` filename all normalize to `audio/webm` before forwarding. No real recording was captured in this check.
 - **Runtime:** Restarted the local Uvicorn process so it loaded the updated route; `/health` remains available on port 8000. The Expo Web dev server remains on port 8081.
 - **Next:** Retry a short real recording in the browser. If upload gets past validation, Sarvam should return either a transcript or a distinct “no speech detected” response. Report the exact new message if it still fails.
+
+### 2026-10-30 — Strip transcript punctuation before exact customer matching
+
+- **Finding:** Recent local backend logs show the speech endpoint returning HTTP 200 repeatedly, followed by a customer lookup query containing trailing punctuation (`Raju bhai .`). The preview database has no voice-tagged business events, so those attempts did not post a voice-originated ledger action.
+- **Change:** `cleanCustomerQuery` now removes sentence periods and common Indic punctuation before exact-match lookup. This keeps recognized sentence-ending punctuation out of customer/product names while leaving the merchant's original utterance available for the preview/audit path.
+- **Branch/commit:** `codex/sarvam-voice-input`, commit `63e6bff` (`fix: trim punctuation from voice customer names`), pushed to `origin`.
+- **Checks:** Mobile TypeScript typecheck passed; `git diff --check` passed.
+- **Next:** Retry a read-only voice command first. Confirm the editable transcript is clean and the customer lookup resolves before trying a write command; any ledger change still requires explicit confirmation.
