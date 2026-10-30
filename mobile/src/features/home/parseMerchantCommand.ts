@@ -45,7 +45,7 @@ function amountToPaise(rawAmount: string): number | null {
 
 function cleanCustomerQuery(value: string): string {
   return value
-    .replace(/[₹,?!।]/g, ' ')
+    .replace(/[₹,?!।.؛،]/g, ' ')
     .replace(/\b(?:udhaar|credit|borrowed|lend|jamma|jama|repay(?:ment)?|paid|received|vasool(?:i)?|balance|baki|baaki|due|khatam|stockout|sold|out|of|stock|ho|gaya|gayi|rupees?|rupaye|rupya|rs\.?|likh|batao|bata|kar|lo|do|de|dena|please|for|customer)\b/gi, ' ')
     .replace(/\b(?:ka|ki|ke|ko|ne|of)\b/gi, ' ')
     .replace(/\s+/g, ' ')
