@@ -379,3 +379,12 @@
 - **Safety:** non-`mock` provider configuration returns `503`; there is no real adapter. Optional `MUNIM_ADMIN_TOKEN` guards run/send/receipt. The scheduler loop is off unless `MUNIM_REMINDER_SCHEDULER_MINUTES` is set.
 - **Checks:** `python -m pytest -q tests` → 61 passed, network blocked.
 - **Limitations:** no authentication beyond the optional admin token; single demo shop; message template is English only.
+
+### 2026-10-30 — Next phase N6: integration, migration rehearsal, handoff
+
+- **Migration tests:** a DB built with the original v0 script upgrades through migrations 1–4 with legacy rows byte-identical. Re-running is a no-op, and a deliberately broken migration rolls back fully. Compatibility tests cover health, command fallback, customer ledger, counts/stockouts, and mock payment allocation.
+- **Rehearsal:** the new `backend/scripts/rehearse_next_phases.py` (refuses the default DB) ran on (a) a clean DB and (b) a copy of a DB created by checking out `5bec501` and running its app startup + `seed_demo.py`. Both: invoice receipt `POSTED` with Sharma due 0 → 83,000 paise and an idempotent replay; inward example asked "Which unit is '10 dahi'…" and then posted stock only; reminders not eligible today, eligible at +16 days, created once, rerun created 0. Mock-send returned `QUIET_HOURS` because the run happened in the evening IST, which is correct. Legacy Raju ₹500, Maggi 12, and 9,611 synthetic transactions were preserved, and the original legacy file was untouched.
+- **Live server walk-through:** the runbook PowerShell commands ran against `uvicorn` on a temp DB with the fake provider. Results: draft → READY → receipt POSTED (due 113,000 paise), inward unit question, reminder approved, mock-send `QUIET_HOURS`.
+- **Security:** tracked files contain none of the local credential values (checked by count, values not printed). `.env` is ignored. Log statements emit only error class names. Contacts are masked in responses and absent from events.
+- **Checks:** `python -m pytest -q tests` → 67 passed.
+- **Not verified:** live Gemini vision extraction; mobile/device use of the new endpoints (no UI added by design).

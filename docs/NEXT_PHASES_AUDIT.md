@@ -77,4 +77,4 @@ New `backend/app/services/migrations.py`: a `schema_migrations(version, name, ap
 | 5 | <15 days not eligible; ≥15 eligible once; FIFO partial repayment; full repayment cancels; opt-out/unverified blocks; mock only; events recorded | `test_reminders.py` |
 | 6 | Clean DB + upgraded copy of a pre-migration DB pass; existing endpoints intact | `test_migrations.py`, `test_existing_behaviour.py` |
 
-Status of each row is recorded in [`HACKATHON_EXECUTION_PLAN.md`](HACKATHON_EXECUTION_PLAN.md) and [`BUILD_LOG.md`](BUILD_LOG.md) as phases complete.
+**Result (2026-10-30):** every row above has a passing automated test (`python -m pytest -q tests` → 67 passed, network blocked). Status of each row is recorded in [`HACKATHON_EXECUTION_PLAN.md`](HACKATHON_EXECUTION_PLAN.md) and [`BUILD_LOG.md`](BUILD_LOG.md) as phases complete.

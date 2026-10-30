@@ -102,6 +102,10 @@ The SQLite database is created at `backend/data/munim.sqlite3` by default. On AP
 
 `MUNIM_INVOICE_PROVIDER` selects how bill photos are read: `gemini` (default; backend-only `GEMINI_API_KEY`, optional `GEMINI_VISION_MODEL` and `MUNIM_VISION_TIMEOUT_SECONDS`), `fake` (deterministic synthetic bill for demos without credentials), or `none` (always a manual draft). If the provider fails, the API still returns an empty editable draft; it never invents fields.
 
+## Next-phase operator runbook
+
+See [`../docs/NEXT_PHASES_RUNBOOK.md`](../docs/NEXT_PHASES_RUNBOOK.md) for configuration, the end-to-end rehearsal script (`scripts/rehearse_next_phases.py`), and a PowerShell API walk-through.
+
 ## Tests
 
 Tests use a fresh temporary SQLite file per test and fake providers; they never read the demo database or call Gemini, Sarvam, SMS, or WhatsApp.

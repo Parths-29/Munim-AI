@@ -74,7 +74,7 @@ Spec: [`NEXT_PHASES_BACKEND_FIRST_PRD.md`](NEXT_PHASES_BACKEND_FIRST_PRD.md). Au
 | N3 | Atomic invoice confirmation | **Done**: 11 automated checks (exactly-once posting, replay, stale hash, injected rollback, duplicate invoice, warning acknowledgement, pack conversion, count reconciliation). |
 | N4 | Quick voice inward | **Done**: 11 automated checks (example → two lines, `10 dahi` asks for unit, stock-only confirm, explicit cost → one payable, clarification paths, LLM outage, verbatim LLM spans, idempotency). |
 | N5 | 15-day reminder engine and mock outbox | **Done**: 14 automated checks (14 vs 15 days, IST day boundary, FIFO partial repayment, full repayment cancels, consent/opt-out/unverified, full mock flow with audit, quiet hours, daily limit, interval, no real provider, admin guard). |
-| N6 | Integration, migration rehearsal, handoff | Pending |
+| N6 | Integration, migration rehearsal, handoff | **Done**: 67 automated checks; clean-DB and legacy-DB-copy rehearsals pass; runbook walk-through executed against a live server; no secret values in tracked files. See [`NEXT_PHASES_RUNBOOK.md`](NEXT_PHASES_RUNBOOK.md). |
 
 ## Deferred after the core demo
 
