@@ -5,10 +5,10 @@
 ## Current status snapshot
 
 **Last checked:** 30 October 2026  
-**Active work branch:** `codex/explainer-hardening` at `85526fb`  
+**Active work branch:** `codex/explainer-hardening` at `6ce832d`  
 **Base:** `origin/main` at `12f8491`  
-**Working tree:** clean after the `85526fb` commit.  
-**Merge status:** Antigravity’s explainer work is merged into `main` in PR #6. The hardening changes at `85526fb` are pushed to their own branch and are not in `main`; a PR has not yet been opened for them.
+**Working tree:** clean at the last local check.  
+**Merge status:** Antigravity’s explainer work is merged into `main` in PR #6. The hardening changes (`85526fb`) and handoff docs (`6ce832d`) are pushed to this branch and are not in `main`; a PR has not yet been opened for them. A separate remote branch, `antigravity/handoff-audit` at `b813ac6`, adds a longer audit version of this log only.
 
 ### Product and scope
 
@@ -27,10 +27,11 @@
 
 ### Verification ledger
 
-- **Verified from Git at this snapshot:** remote refs fetched; `main` is `12f8491`; active branch is `85526fb`; `85526fb` is pushed and the working tree is clean.
+- **Verified from Git at this snapshot:** remote refs fetched; `main` is `12f8491`; `codex/explainer-hardening` is `6ce832d`; the branch is pushed and the local working tree was clean.
 - **Verified by Codex:** `git diff --check` passed before the hardening commit.
 - **Reported by Antigravity, not rerun on the hardening branch:** TypeScript typecheck and Android Expo export passed for the explainer implementation; fallback endpoint returned valid JSON; Gemini requests reportedly timed out or returned 503.
-- **Not verified on `85526fb`:** backend smoke checks, mobile typecheck, Android export, live Gemini response, and full phone-to-backend demo.
+- **Reported in the later Antigravity audit, not independently verified by Codex:** mobile typecheck and Android Expo export passed; direct Gemini call timed out after about 15 seconds. Backend facts/explainer were described as passing, but the pasted command history shows pytest, TestClient, and direct Python smoke attempts exiting with code 1 and does not include the later successful command/output. Treat backend runtime status as **unverified** until a reproducible passing command and output are recorded.
+- **Not verified on the current hardening branch:** backend smoke checks, mobile typecheck, Android export, live Gemini response, and full phone-to-backend demo.
 
 ## How to resume on another laptop
 
@@ -87,3 +88,11 @@
 - **Checks:** `git diff --check` passed before commit. Runtime and mobile build checks have not been rerun after these changes.
 - **Limitations:** number validation checks whether values occur somewhere in the facts collection, not whether each sentence ties each value to the correct fact ID. Treat it as a guardrail, not proof of semantic correctness.
 - **Next:** run backend smoke checks, mobile typecheck/export, then open a PR if checks pass.
+
+### 2026-10-30 — Follow-up audit report received
+
+- **Goal:** preserve the remote audit findings without confusing reported results with independently verified results.
+- **Changes:** Antigravity pushed `antigravity/handoff-audit` at `b813ac6`, based on `codex/explainer-hardening` at `6ce832d`. The remote commit changes only `docs/BUILD_LOG.md`; it does not add application code.
+- **Checks reported:** mobile TypeScript check and Android export passed; Gemini direct call timed out; the report claims backend fact/explainer/fallback behavior passed.
+- **Evidence gap:** the command history supplied with that report also lists backend pytest, TestClient smoke, and direct Python smoke attempts exiting with code 1. The report gives no exact successful backend command or output to reconcile those failures. Codex therefore records backend verification as unverified.
+- **Next:** inspect the precise backend failures and run a reproducible backend smoke check before opening a PR. Keep using `codex/explainer-hardening` as the working branch; do not merge the audit-only branch as the code PR by default.
