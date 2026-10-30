@@ -184,6 +184,80 @@ CREATE INDEX IF NOT EXISTS ix_receipt_movements_product
 """ + _append_only("stock_receipt_movements", "stock receipt movements")
 
 
+REMINDERS = """
+-- Per-shop configuration (mutable; every change is also written to the timeline).
+CREATE TABLE IF NOT EXISTS shop_settings (
+    shop_id TEXT PRIMARY KEY,
+    timezone TEXT NOT NULL,
+    reminder_overdue_days INTEGER NOT NULL CHECK (reminder_overdue_days >= 1),
+    quiet_hours_start TEXT NOT NULL,
+    quiet_hours_end TEXT NOT NULL,
+    reminder_min_interval_days INTEGER NOT NULL CHECK (reminder_min_interval_days >= 1),
+    max_mock_sends_per_day INTEGER NOT NULL CHECK (max_mock_sends_per_day >= 1),
+    updated_at TEXT NOT NULL
+);
+
+-- Merchant-recorded contact + consent evidence. Append-only: latest row per
+-- (customer, channel) is current. Consent is never inferred.
+CREATE TABLE IF NOT EXISTS customer_contact_consents (
+    consent_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    customer_id TEXT NOT NULL,
+    channel TEXT NOT NULL CHECK (channel IN ('sms', 'whatsapp')),
+    contact_value TEXT,
+    contact_verified INTEGER NOT NULL CHECK (contact_verified IN (0, 1)),
+    verification_method TEXT,
+    consent_status TEXT NOT NULL CHECK (consent_status IN ('OPTED_IN', 'OPTED_OUT')),
+    evidence_note TEXT NOT NULL,
+    recorded_by TEXT NOT NULL CHECK (recorded_by = 'merchant'),
+    idempotency_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (shop_id, customer_id) REFERENCES customers(shop_id, customer_id),
+    CHECK (consent_status = 'OPTED_OUT' OR contact_value IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS ix_consents_customer_channel
+    ON customer_contact_consents(shop_id, customer_id, channel, created_at);
+""" + _append_only("customer_contact_consents", "consent records") + """
+-- Reminder outbox. Core facts are immutable; status is the latest transition.
+CREATE TABLE IF NOT EXISTS reminders (
+    reminder_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    customer_id TEXT NOT NULL,
+    channel TEXT NOT NULL CHECK (channel IN ('sms', 'whatsapp')),
+    consent_id TEXT NOT NULL REFERENCES customer_contact_consents(consent_id),
+    anchor_entry_id TEXT NOT NULL,
+    oldest_unpaid_since TEXT NOT NULL,
+    oldest_unpaid_local_date TEXT NOT NULL,
+    overdue_days INTEGER NOT NULL,
+    outstanding_paise INTEGER NOT NULL CHECK (outstanding_paise > 0),
+    dedupe_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (shop_id, customer_id) REFERENCES customers(shop_id, customer_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_reminders_customer ON reminders(shop_id, customer_id, created_at);
+""" + _append_only("reminders", "reminders") + """
+CREATE TABLE IF NOT EXISTS reminder_transitions (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    transition_id TEXT NOT NULL UNIQUE,
+    reminder_id TEXT NOT NULL REFERENCES reminders(reminder_id),
+    to_status TEXT NOT NULL CHECK (to_status IN
+        ('PENDING_APPROVAL', 'APPROVED_MOCK', 'SENT_MOCK', 'DELIVERED_MOCK', 'FAILED_MOCK', 'CANCELLED', 'BLOCKED_OPTED_OUT')),
+    reason TEXT NOT NULL,
+    actor TEXT NOT NULL CHECK (actor IN ('system', 'merchant', 'provider_mock')),
+    message_text TEXT,
+    include_amount INTEGER CHECK (include_amount IS NULL OR include_amount IN (0, 1)),
+    provider TEXT CHECK (provider IS NULL OR provider = 'mock'),
+    provider_message_id TEXT,
+    idempotency_key TEXT UNIQUE,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_reminder_transitions ON reminder_transitions(reminder_id, seq);
+""" + _append_only("reminder_transitions", "reminder transitions")
+
+
 def _baseline() -> str:
     from app.services.database import SCHEMA
 
@@ -195,6 +269,7 @@ MIGRATIONS: list[tuple[int, str, object]] = [
     (1, "baseline_v0_schema", _baseline),
     (2, "suppliers_and_payables", SUPPLIERS),
     (3, "intake_proposals_and_stock_receipts", INTAKE_AND_RECEIPTS),
+    (4, "reminder_consent_and_outbox", REMINDERS),
 ]
 
 

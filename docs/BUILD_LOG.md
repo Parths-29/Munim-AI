@@ -370,3 +370,12 @@
 - **Test isolation fix:** the test fixture now blocks all `urllib` network calls and clears the Gemini key in every module that reads it. Before this fix, one earlier Phase 4 run may have sent a synthetic test phrase to Gemini through the local `.env` key. Nothing was persisted from it.
 - **Checks:** `python -m pytest -q tests` → 47 passed with network blocked.
 - **Limitations:** Product names containing `aur`/`and` would be split; the merchant can correct this in review. Quantities must be whole numbers.
+
+### 2026-10-30 — Next phase N5: consent-aware 15-day reminders and mock outbox
+
+- **Migration 4:** `shop_settings`, append-only `customer_contact_consents`, immutable `reminders` (dedupe key unique), and append-only `reminder_transitions` (status = latest transition).
+- **Rule:** positive balance, oldest still-unpaid credit (FIFO repayment allocation) ≥ 15 calendar days old in `Asia/Kolkata`, verified contact, explicit opt-in, no opt-out, no active reminder, outside the minimum interval. No visit inference.
+- **Flow:** preview (read-only) → run (creates `PENDING_APPROVAL`; idempotent) → merchant approve (neutral message; amount only if chosen) → mock send (quiet hours, daily limit, revalidation; `MockNotificationProvider` only) → mock delivery receipt. Full repayment through the ledger or either payment-allocation path cancels pending reminders in the same transaction. Opt-out blocks active reminders. Every transition is on the timeline without contact data, and contacts are masked in all responses.
+- **Safety:** non-`mock` provider configuration returns `503`; there is no real adapter. Optional `MUNIM_ADMIN_TOKEN` guards run/send/receipt. The scheduler loop is off unless `MUNIM_REMINDER_SCHEDULER_MINUTES` is set.
+- **Checks:** `python -m pytest -q tests` → 61 passed, network blocked.
+- **Limitations:** no authentication beyond the optional admin token; single demo shop; message template is English only.

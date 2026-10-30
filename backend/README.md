@@ -75,6 +75,12 @@ For Expo Web, local CORS origins default to `http://localhost:8081` and `http://
 | `GET` | `/receipts/{id}` | Read a posted stock receipt. |
 | `POST` | `/inventory/inward/proposals` | Reviewed transcript/text → stock-receipt draft or clarification (no writes). |
 | `GET`/`POST` | `/inventory/inward/proposals/{id}`, `/revise`, `/reject`, `/confirm` | Review and confirm an inward delivery; stock only unless a verified total is added. |
+| `GET`/`POST` | `/reminders/settings` | Shop timezone, 15-day threshold, quiet hours, interval, mock daily limit. |
+| `GET`/`POST` | `/customers/{id}/reminder-consent` | Merchant-recorded verified contact + opt-in/opt-out evidence (masked in responses). |
+| `GET` | `/reminders/eligibility/preview?as_of=` | Read-only FIFO aging and eligibility reasons. |
+| `POST` | `/reminders/eligibility/run?as_of=` | Create reminders awaiting approval; idempotent; sends nothing. |
+| `GET` | `/reminders`, `/reminders/{id}` | Outbox with message preview and transition history. |
+| `POST` | `/reminders/{id}/approve`, `/cancel`, `/mock-send`, `/mock-delivery-receipt` | Merchant approval and **mock-only** send/delivery states. |
 
 Customer, ledger, and inventory writes use a stable `idempotency_key`, a unique `source_event_id`, and explicit `confirmed` state. Use the accepted command ID as the idempotency key. Replaying either key or source event has one effect; reusing one for different operation details returns `409 Conflict`. Payment endpoints have their own documented event and confirmation rules below.
 

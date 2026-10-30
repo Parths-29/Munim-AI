@@ -73,7 +73,7 @@ Spec: [`NEXT_PHASES_BACKEND_FIRST_PRD.md`](NEXT_PHASES_BACKEND_FIRST_PRD.md). Au
 | N2 | Invoice image intake and draft proposal | **Done**: 16 automated checks (draft-only, upload rejection, low confidence, mismatches, provider outage, duplicates, idempotent upload). |
 | N3 | Atomic invoice confirmation | **Done**: 11 automated checks (exactly-once posting, replay, stale hash, injected rollback, duplicate invoice, warning acknowledgement, pack conversion, count reconciliation). |
 | N4 | Quick voice inward | **Done**: 11 automated checks (example → two lines, `10 dahi` asks for unit, stock-only confirm, explicit cost → one payable, clarification paths, LLM outage, verbatim LLM spans, idempotency). |
-| N5 | 15-day reminder engine and mock outbox | Pending |
+| N5 | 15-day reminder engine and mock outbox | **Done**: 14 automated checks (14 vs 15 days, IST day boundary, FIFO partial repayment, full repayment cancels, consent/opt-out/unverified, full mock flow with audit, quiet hours, daily limit, interval, no real provider, admin guard). |
 | N6 | Integration, migration rehearsal, handoff | Pending |
 
 ## Deferred after the core demo

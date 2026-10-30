@@ -207,6 +207,27 @@ On-hand stock is now `SUM(physical-count deltas) + SUM(receipt movements)`, and 
 - The response is `{status: "proposal"|"clarification", message, parsed_by, proposal, writes_performed: false}`. The proposal uses the same shape and validation as invoice proposals (`source_kind` `voice_inward`/`text_inward`). A missing unit (for example `10 dahi`) is a blocking `UNIT_MISSING` issue that asks for the unit and lists `unit_options`. It is never assumed. Generic supplier phrases such as “doodh wale” stay an unresolved label.
 - `GET /inventory/inward/proposals/{id}`, `POST …/revise`, `POST …/reject`, and `POST …/confirm` behave as described for invoices. Without a verified `total_paise`, confirm records **stock only** (`payable_status: "NOT_SUPPLIED"`), and a non-zero `paid_now_paise` is rejected. A payable is created only if the merchant revises in a total, selects the supplier, and confirms with an explicit paid-now amount.
 
+## Overdue udhaar reminders with a mock-only outbox (v0.9, Phase 5)
+
+**Eligibility rule:** the customer has a positive derived balance, and the oldest **still-unpaid** credit is at least `reminder_overdue_days` (default 15) calendar days old in the shop timezone (default `Asia/Kolkata`). Repayments are applied FIFO: each repayment settles the oldest open credit first, and a partly repaid credit keeps its original date. This is an overdue rule only. The system has no visit records, and missing UPI activity is never treated as a missed visit.
+
+A customer must also have a merchant-recorded **verified** contact with explicit **opt-in** on a channel, no later opt-out, no active reminder, and no reminder within `reminder_min_interval_days` (default 7).
+
+- `GET /reminders/settings`; `POST /reminders/settings` takes `{timezone, reminder_overdue_days, quiet_hours_start, quiet_hours_end, reminder_min_interval_days, max_mock_sends_per_day, confirmed}`. Defaults: quiet hours 21:00–09:00, 20 mock sends/day. Changes are logged to the timeline.
+- `POST /customers/{id}/reminder-consent` takes `{channel: sms|whatsapp, consent_status: OPTED_IN|OPTED_OUT, contact_value, contact_verified, verification_method, evidence_note, confirmed, idempotency_key}`. Records are append-only; the latest record per channel wins. Opt-in needs a valid Indian mobile number, and a verified contact needs a `verification_method`. Opt-out immediately blocks active reminders on that channel. `GET` returns masked contacts only.
+- `GET /reminders/eligibility/preview?as_of=` is read-only. Per customer with a balance it returns the open credits after FIFO, the oldest unpaid local date, overdue days, `eligible`, and `reasons` (`NOT_YET_OVERDUE`, `NO_CONSENT_RECORDED`, `CONTACT_NOT_VERIFIED`, `OPTED_OUT`, `REMINDER_ALREADY_ACTIVE`, `REMINDED_RECENTLY`).
+- `POST /reminders/eligibility/run?as_of=` creates `PENDING_APPROVAL` reminders for eligible customers and cancels active reminders whose balance is now zero. It is idempotent and scheduler-safe: an active-reminder check plus a unique dedupe key `(customer, oldest open credit, channel, interval cycle)`. It never sends anything. An optional background loop runs it every `MUNIM_REMINDER_SCHEDULER_MINUTES` (default off).
+- `GET /reminders?status=` and `GET /reminders/{id}` return the recipient name, masked contact, channel, outstanding at eligibility and current balance, oldest unpaid date, the reason, the exact `message_preview`, and the full transition history. Every view carries `mock_only: true` and `delivered_to_real_recipient: false`.
+- `POST /reminders/{id}/approve` takes `{confirmed, include_amount (default false), idempotency_key}`. It revalidates that the balance is still positive and consent is still valid, then freezes the neutral message. The amount appears only when `include_amount` is chosen.
+- `POST /reminders/{id}/mock-send` takes `{confirmed, idempotency_key}` and requires `APPROVED_MOCK`. It revalidates again, enforces quiet hours (`409 QUIET_HOURS`) and the daily limit (`429 DAILY_LIMIT`), then asks `MockNotificationProvider` for a `mock_…` ID and records `SENT_MOCK`. No phone or network is contacted. Any other `MUNIM_NOTIFICATION_PROVIDER` value returns `503`; no real adapter exists.
+- `POST /reminders/{id}/mock-delivery-receipt` takes `{outcome: DELIVERED|FAILED, idempotency_key}` and records `DELIVERED_MOCK` or `FAILED_MOCK`. `POST /reminders/{id}/cancel` is merchant cancellation.
+
+State machine: `PENDING_APPROVAL → APPROVED_MOCK → SENT_MOCK → DELIVERED_MOCK | FAILED_MOCK`. `CANCELLED` and `BLOCKED_OPTED_OUT` are reachable before send. Any repayment that brings the balance to zero (manual, auto-allocated, or merchant-allocated mock payment) cancels pending or approved reminders in the same transaction. Each transition is append-only and appears on the timeline without contact data.
+
+When `MUNIM_ADMIN_TOKEN` is set, `run`, `mock-send`, and `mock-delivery-receipt` require the `X-Munim-Admin-Token` header.
+
+Default message (amount omitted): “Hello {name}, our records show an outstanding shop balance. Please contact the shop if you'd like to review it. Reply STOP to stop these reminders.”
+
 ## Explicitly not implemented in v0.5
 
 Live action publication, authentication, and production payment integration. Voice transcription is an input convenience and is not guaranteed to recognize names or spoken amounts correctly; the transcript must be reviewed. The facts-only explanation and command interpretation endpoints do not imply live Paytm connectivity or autonomous writes.
