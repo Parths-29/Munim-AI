@@ -22,11 +22,23 @@ const CREDIT_TERMS = /\b(?:udhaar|credit|borrowed|lend)\b/i;
 const REPAYMENT_TERMS = /\b(?:jamma|jama|repay(?:ment)?|paid|received|vasool(?:i)?)\b/i;
 const BALANCE_TERMS = /\b(?:balance|baki|baaki|due)\b|kitna\s+udhaar/i;
 const STOCKOUT_TERMS = /\b(?:khatam|stockout|sold\s+out|out\s+of\s+stock)\b/i;
-const MONEY_TOKENS = /\d+(?:\.\d+)?/g;
+// Keep common Indian and western thousands separators inside one amount token.
+// Validation below rejects malformed grouping rather than guessing.
+const MONEY_TOKENS = /\d[\d,]*(?:\.\d+)?/g;
+
+function normalizeDigits(value: string): string {
+  return value.replace(/[०-९]/g, (digit) => String(digit.charCodeAt(0) - 0x0966));
+}
 
 function amountToPaise(rawAmount: string): number | null {
-  const [rupees, fraction = ''] = rawAmount.split('.');
+  const [groupedRupees, fraction = ''] = rawAmount.split('.');
   if (fraction.length > 2) return null;
+  const validGrouping =
+    /^\d+$/.test(groupedRupees) ||
+    /^\d{1,2}(?:,\d{2})*,\d{3}$/.test(groupedRupees) ||
+    /^\d{1,3}(?:,\d{3})+$/.test(groupedRupees);
+  if (!validGrouping) return null;
+  const rupees = groupedRupees.replace(/,/g, '');
   const amountPaise = Number(rupees) * 100 + Number((fraction + '00').slice(0, 2));
   return Number.isSafeInteger(amountPaise) && amountPaise > 0 ? amountPaise : null;
 }
@@ -45,7 +57,7 @@ function clarification(message: string): ParsedMerchantCommand {
 }
 
 export function parseMerchantCommand(utterance: string): ParsedMerchantCommand {
-  const text = utterance.trim();
+  const text = normalizeDigits(utterance).trim();
   if (!text) return clarification('Type a command first.');
 
   const wantsCredit = CREDIT_TERMS.test(text);
@@ -88,7 +100,7 @@ export function parseMerchantCommand(utterance: string): ParsedMerchantCommand {
   const rawAmount = amountMatch[0];
   const amountPaise = amountToPaise(rawAmount);
   if (amountPaise === null) {
-    return clarification('Enter a positive amount with no more than two decimal places.');
+    return clarification('Enter a positive amount with valid comma grouping and no more than two decimal places.');
   }
 
   const beforeAmount = text.slice(0, amountMatch.index);

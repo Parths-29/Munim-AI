@@ -183,8 +183,9 @@ mobile/
 
 | Feature | Status |
 |---|---|
-| Microphone / speech permission | ❌ Not requested (text fallback active) |
-| Sarvam STT / TTS | ❌ Not included (future stretch) |
+| Microphone / speech permission | ✅ Requested at runtime when the merchant starts recording; text fallback remains available |
+| Sarvam STT | ✅ Optional backend transcription; requires `SARVAM_API_KEY` and a real-device/provider check |
+| Sarvam TTS | ❌ Not included |
 | Live Paytm API / processor | ❌ Never claimed (mock UPI intake only) |
 | Customer / Ledger mutations | ✅ Implemented via backend v0.5 |
 | Text commands for udhaar, jama, balance, and stockout | ✅ Limited deterministic parser; confirmation required before writes |
@@ -231,6 +232,11 @@ in `backend/README.md` before opening the app.
   before any EAS or production build.
 - The local input log (history cards on the home screen) is in-memory only;
   it resets on reload.
-- Text path is the only input channel. Voice is a Phase 3 stretch goal,
-  pending Sarvam credentials and tested latency.
+- Voice transcription is implemented through the backend Sarvam adapter, but
+  real-device microphone capture and live provider connectivity still need a
+  check. Every transcript remains editable and data-changing commands still
+  require the normal merchant preview and confirmation.
+- The deterministic command parser accepts numeric rupee amounts with Indian
+  or western comma grouping and Devanagari digits. It does not infer amount
+  words such as “pachaas”; unsupported or ambiguous wording needs correction.
 
