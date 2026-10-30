@@ -23,6 +23,7 @@ from app.api.ledger_pages import router as ledger_pages_router
 from app.api.payments import router as payments_router
 from app.api.reminders import router as reminders_router
 from app.api.speech import router as speech_router
+from app.api.stock import router as stock_router
 from app.api.suppliers import router as suppliers_router
 from app.services.database import SHOPS, _CURRENT_SHOP, connect, initialize_database, resolve_shop, use_shop
 from app.services.reminders import run_eligibility
@@ -94,6 +95,7 @@ app.add_middleware(
 )
 
 app.include_router(health_router)
+app.include_router(stock_router)
 app.include_router(actions_router)
 app.include_router(commands_router)
 app.include_router(speech_router)

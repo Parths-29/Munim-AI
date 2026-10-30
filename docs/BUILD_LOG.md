@@ -394,3 +394,10 @@
 - Added `/ledger-pages` scan → draft → revise / voice-correction → atomic confirm. Notebook dates are kept as `ledger_entries.occurred_at` (additive migration 5) and drive FIFO reminder aging. Devanagari/Gujarati digits and udhaar/jama marker words are parsed deterministically. Names are matched exactly in either script; customers are created only on merchant choice.
 - **Checks:** `python -m pytest -q tests` → 74 passed (network blocked). The legacy-upgrade test now also asserts that new columns are NULL on old rows.
 - **Plan:** see `docs/GROWTH_PHASES.md` for N7–N12.
+
+### 2026-10-31 — Shop personas and Inventory 2.0
+
+- **Shops:** every service is scoped to the shop chosen by `X-Munim-Shop` (`kirana` default, `tea_stall`, `medical_store`) via a request context variable.
+- **Inventory 2.0 (migration 6):** merchant-owned product profiles (category, selling price, reorder level/quantity, lead time); atomic multi-line outflows (`SALE`, `WASTAGE`, `SELF_USE`, `RETURN_TO_SUPPLIER`) with unit conversions, idempotency, and a 409 instead of negative recorded stock; `GET /inventory/overview` (on-hand, status, value at cost/retail, margin, 14-day sales, days of cover, top/slow movers, categories, wastage), `GET /inventory/reorder-suggestions`, and `GET /inventory/products/{id}/history`. On-hand = counts + receipts + outflows.
+- **Synthetic catalogs:** `catalog_seed.py` seeds 36 kirana, 16 tea-stall, and 8 medical products with Hindi/Hinglish aliases, plus 30 days of simulated sales, wastage, supplier deliveries (receipts + payables), and customers with dated udhaar. Planted states: out-of-stock (Eggs, Kurkure), low (Besan, Maggi, Elaichi, Vicks), and slow movers (Bru Coffee, Mathri, LPG). Deterministic and replay-safe; never adds history to products that already have movements.
+- **Checks:** `python -m pytest -q tests` → 81 passed.
