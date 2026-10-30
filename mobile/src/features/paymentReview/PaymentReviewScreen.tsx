@@ -52,14 +52,14 @@ export default function PaymentReviewScreen() {
       const now = Date.now();
       await intakeMockPayment({
         event_id: `pay_synth_demo_${now}`,
-        amount_paise: 30000,
+        amount_paise: 20000,
         status: 'SUCCESS',
         occurred_at: new Date().toISOString(),
         idempotency_key: `cmd_mock_payment_${now}`,
         payer_token: null,
         source: 'provider_mock',
       });
-      setActionMessage('Synthetic ₹300 payment added to review. This is demo data, not a real UPI payment.');
+      setActionMessage('Synthetic ₹200 payment added to review. This is demo data, not a real UPI payment.');
       await loadReviewQueue();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -143,7 +143,7 @@ export default function PaymentReviewScreen() {
 
       <TouchableOpacity style={styles.refreshBtn} onPress={handleCreateDemoPayment} disabled={loading}>
         <Ionicons name="flask-outline" size={16} color="#0f3460" />
-        <Text style={styles.refreshText}>Add synthetic ₹300 payment</Text>
+        <Text style={styles.refreshText}>Add synthetic ₹200 payment</Text>
       </TouchableOpacity>
 
       {actionMessage && (

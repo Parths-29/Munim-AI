@@ -280,3 +280,10 @@
 - **Files:** `backend/app/domain/models.py`, `backend/app/main.py`, new `backend/app/api/commands.py`, new `backend/app/services/command_nlp.py`, `mobile/src/api/ledgerClient.ts`, `mobile/src/features/home/HomeScreen.tsx`, `docs/contracts/backend-api-v0.md`, `docs/HACKATHON_EXECUTION_PLAN.md`.
 - **Checks:** Mobile TypeScript typecheck passed. Backend `compileall` passed. `git diff --check` passed. No live Gemini call was made during this implementation step.
 - **Next:** Confirm the new clarification/fallback message in the browser using an unsupported typed phrasing. Once a valid Gemini key is configured, verify one benign balance query and one amount-bearing command end to end, inspecting the preview and cancelling before any write if desired.
+
+### 2026-10-30 — Gemini key refresh check and browser payment-review readiness
+
+- **Gemini configuration:** Confirmed a non-placeholder `GEMINI_API_KEY` is present in the ignored root `.env` without printing or committing it. Restarted the local backend without an environment override so it reads that value. Two browser-NLP route attempts returned controlled fallback; a direct minimal Gemini request returned HTTP 503. The key is being loaded, but successful Gemini inference is not verified yet.
+- **Read-only browser-data audit:** Local demo database currently reports Raju due ₹250, Maggi stock 12, seven timeline events, and one successful unmatched mock payment of ₹300 with reason `payer_token_missing`.
+- **Payment behavior:** Manual allocation of that ₹300 payment was rejected with HTTP 409 because it exceeds the customer's current ₹250 due. This is expected balance protection; no repayment was posted. Updated the browser error mapping to show both values and state that no ledger entry was created. Changed the next demo payment button to add a synthetic ₹200 payment so it can fit the current ₹250 due when manually confirmed.
+- **Next:** Refresh the browser and use the new ₹200 mock payment for the eligible manual-allocation path. Keep the old ₹300 item unresolved as an example of an over-balance payment being held safely. Retry Gemini later when the provider stops returning 503.

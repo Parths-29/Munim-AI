@@ -7,7 +7,7 @@ This is the current phase tracker for the hackathon prototype. Keep the Git work
 **Status: Core text flow implemented; browser command NLP assist added with deterministic fallback. Voice capture/transcription tuning remains deferred.**
 
 - Text and Sarvam voice input enter the bounded deterministic command parser.
-- If the parser cannot classify a command, the browser may ask Gemini to return exact quoted entity/amount spans using synthetic English/Hinglish examples; the app validates those spans and re-runs its deterministic parser before preview. This is prompt guidance, not model training, and Gemini currently falls back because the configured key returns HTTP 401.
+- If the parser cannot classify a command, the browser may ask Gemini to return exact quoted entity/amount spans using synthetic English/Hinglish examples; the app validates those spans and re-runs its deterministic parser before preview. This is prompt guidance, not model training. The updated local key is present, but the latest Gemini request returned HTTP 503 and the deterministic fallback remains active.
 - Customer/product aliases are resolved exactly; ambiguity or missing details stops for clarification.
 - Credit, repayment, and stockout writes show a preview, require merchant confirmation, and use idempotency keys.
 - Balances are derived from append-only ledger entries; repayments cannot exceed outstanding balance.
@@ -42,7 +42,7 @@ This is the current phase tracker for the hackathon prototype. Keep the Git work
 - Business facts are computed from the synthetic payment fixture and include evidence, windows, and caveats.
 - Gemini may explain only supplied facts; invalid or unavailable model output falls back to deterministic copy.
 - Mock shop-side actions require approval and are never published. Outcome comparisons remain observational and do not claim causality.
-- The current Gemini key returns HTTP 401, so the deterministic path is the active path. MongoDB connectivity is separate; the app uses SQLite.
+- The current Gemini request returned HTTP 503, so the deterministic path is the active path until provider access succeeds. MongoDB connectivity is separate; the app uses SQLite.
 
 **Exit gate:** The brief loads with facts and caveats when Gemini is unavailable, a mock action requires confirmation, and the outcome stays scheduled/insufficient when no post-action data exists.
 
@@ -52,8 +52,9 @@ This is the current phase tracker for the hackathon prototype. Keep the Git work
 
 1. **Passed (service-level):** Created a clean Phase 5 synthetic database with Raju opening due ₹500 and Maggi stock 12; preserved the previous preview database separately.
 2. **Passed (isolated logic rehearsal):** Confirmed ₹50 credit, ₹300 unmatched payment review and merchant-confirmed allocation, ending balance ₹250; stockout did not change stock before count; confirmed count set stock to 10; five facts, deterministic explanation, and scheduled mock action all worked.
-3. **Remaining:** Rehearse those paths through the browser/phone UI, verify both services start from the documented setup, and check phone-to-laptop network access.
-4. Freeze a known-good branch/commit and keep the demo script honest about synthetic data, deterministic fallback, mock publishing, and missing live Paytm integration.
+3. **In progress (browser-backed state audit):** The current local demo data has Raju due ₹250, Maggi stock 12, and one successful unmatched ₹300 mock payment (`payer_token_missing`). Manual allocation correctly returned 409 because the payment exceeds the outstanding due. The review screen now offers a ₹200 synthetic payment for a safe eligible allocation path and explains over-balance rejection clearly.
+4. **Remaining:** Rehearse the core paths through the browser/phone UI, verify both services start from the documented setup, and check phone-to-laptop network access.
+5. Freeze a known-good branch/commit and keep the demo script honest about synthetic data, deterministic fallback, mock publishing, and missing live Paytm integration.
 
 **Completion gate:** The complete scripted journey works from a clean seed without manual database edits, every financial write has a confirmation step, and all claims match observed behavior.
 

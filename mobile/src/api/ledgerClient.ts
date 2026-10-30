@@ -430,7 +430,17 @@ export async function allocatePaymentManually(
   });
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null);
-    throw new Error(errorBody?.detail ?? `Payment allocation failed with HTTP ${res.status}`);
+    const detail = errorBody?.detail;
+    if (detail && typeof detail === 'object' && detail.code === 'PAYMENT_EXCEEDS_OUTSTANDING_BALANCE') {
+      const paymentRupees = Number(detail.payment_paise) / 100;
+      const balanceRupees = Number(detail.balance_due_paise) / 100;
+      throw new Error(
+        `This ₹${paymentRupees.toFixed(2)} payment is greater than the customer's ₹${balanceRupees.toFixed(2)} outstanding due. No repayment was posted. Use a payment no larger than the verified due.`
+      );
+    }
+    throw new Error(
+      typeof detail === 'string' ? detail : `Payment allocation failed with HTTP ${res.status}`
+    );
   }
   return res.json();
 }
