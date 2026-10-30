@@ -15,6 +15,7 @@ from app.api.inventory import router as inventory_router
 from app.api.ledger import router as ledger_router
 from app.api.payments import router as payments_router
 from app.api.speech import router as speech_router
+from app.api.suppliers import router as suppliers_router
 from app.services.database import connect, initialize_database
 from app.services.synthetic_data import seed_synthetic_transactions
 
@@ -60,3 +61,4 @@ app.include_router(payments_router)
 app.include_router(customers_router)
 app.include_router(events_router)
 app.include_router(ledger_router)
+app.include_router(suppliers_router)

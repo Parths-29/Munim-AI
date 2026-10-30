@@ -1,4 +1,4 @@
-# Backend API contract v0.8
+# Backend API contract v0.9
 
 This describes the synthetic single-shop backend slice on the current task branch. It supplements the AI proposal schemas; it is not a Paytm API contract.
 
@@ -130,6 +130,20 @@ An event is automatically allocated as a repayment only when its status is `SUCC
 ## `POST /commands/interpret`
 
 Gemini-assisted, read-only interpretation of one merchant utterance into a bounded supported intent and exact quoted name/amount/count spans. Supported intents include credit, repayment, balance, customer creation, stockout observation, stock lookup, physical count, payment summary, and timeline summary. Missing credentials, upstream errors, low confidence, or invalid spans return a clarification/unavailable result. This endpoint never writes; the client reparses locally, resolves an exact entity, previews every mutation, and requires explicit merchant confirmation.
+
+## Suppliers and supplier payables (v0.9, Phase 1)
+
+Supplier payables are money **the shop owes**. They are stored in `suppliers`, `supplier_aliases`, and append-only `supplier_payable_entries`, never in the customer ledger, and use their own routes and response fields (`amount_due_paise`, not `balance_due_paise`).
+
+- `POST /suppliers` — `display_name`, optional exact `aliases`, optional merchant-supplied `contact_phone`/`contact_note`, `confirmed: true`, `idempotency_key`. Replay with identical data returns the same supplier; different data with the same key returns `409`. Responses only expose `contact_phone_masked`.
+- `GET /suppliers` and `GET /suppliers/resolve?query=` — exact normalized alias lookup returning `RESOLVED`, `AMBIGUOUS`, or `NOT_FOUND`. Generic phrases such as “doodh wale” are not mapped to a supplier unless the merchant explicitly created that alias.
+- `GET /suppliers/{id}/balance` — `amount_due_paise` (never negative), `entry_count`, `totals_by_type_paise`, and the documented `sign_convention`: `INVOICE_CREDIT + ADJUSTMENT_INCREASE − PAYMENT − DEBIT_NOTE − ADJUSTMENT_DECREASE`.
+- `GET /suppliers/{id}/entries?limit=100` — entry history with `direction` (`INCREASES_DUE`/`DECREASES_DUE`), source kind, source document, and note.
+- `POST /suppliers/{id}/payments` — records a payment the merchant says was already made (`amount_paise`, `source_event_id`, `idempotency_key`, `confirmed`, optional `note`). **No money is transferred.** Amount above current due returns `409` `SUPPLIER_DECREASE_EXCEEDS_DUE`.
+- `POST /suppliers/{id}/adjustments` — `entry_type` `DEBIT_NOTE`, `ADJUSTMENT_INCREASE` (e.g. an opening balance), or `ADJUSTMENT_DECREASE`, with a required `note`.
+- `INVOICE_CREDIT` entries are only created by the confirmed invoice/receipt posting flow (Phase 3).
+
+Idempotency follows the ledger rules: replay of the same key/source event returns the original entry with `idempotent_replay: true`; reuse for different details returns `409`.
 
 ## Explicitly not implemented in v0.5
 

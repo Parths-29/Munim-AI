@@ -1,0 +1,72 @@
+"""Every test gets its own temporary SQLite file; the demo database is never touched."""
+
+import sqlite3
+import uuid
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.services import database
+
+
+@pytest.fixture(autouse=True)
+def temp_db(tmp_path, monkeypatch):
+    path = tmp_path / "munim-test.sqlite3"
+    monkeypatch.setattr(database, "DB_PATH", path)
+    # Tests must never reach live providers even if a developer has local keys.
+    for name in ("GEMINI_API_KEY", "SARVAM_API_KEY", "MUNIM_ADMIN_TOKEN", "MUNIM_INVOICE_PROVIDER", "MUNIM_INWARD_LLM"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr("app.services.explainer._get_api_key", lambda: None)
+    monkeypatch.setattr("app.services.command_nlp._get_api_key", lambda: None)
+    database.initialize_database()
+    return path
+
+
+@pytest.fixture
+def client():
+    from app.main import app
+
+    # No context manager: skip lifespan so the 90-day synthetic fixture is not seeded per test.
+    return TestClient(app)
+
+
+def key(prefix: str = "test") -> str:
+    return f"{prefix}-{uuid.uuid4().hex[:10]}"
+
+
+@pytest.fixture
+def make_customer(client):
+    def _make(name="Raju bhai", aliases=None):
+        response = client.post("/customers", json={
+            "display_name": name, "aliases": aliases or [], "confirmed": True, "idempotency_key": key("cust"),
+        })
+        assert response.status_code == 201, response.text
+        return response.json()
+    return _make
+
+
+@pytest.fixture
+def make_product(client):
+    def _make(name, unit, aliases=None):
+        response = client.post("/products", json={
+            "name": name, "unit": unit, "aliases": aliases or [], "confirmed": True, "idempotency_key": key("prod"),
+        })
+        assert response.status_code == 201, response.text
+        return response.json()
+    return _make
+
+
+@pytest.fixture
+def make_supplier(client):
+    def _make(name, aliases=None, **extra):
+        response = client.post("/suppliers", json={
+            "display_name": name, "aliases": aliases or [], "confirmed": True, "idempotency_key": key("sup"), **extra,
+        })
+        assert response.status_code == 201, response.text
+        return response.json()
+    return _make
+
+
+def table_count(path, table: str) -> int:
+    with sqlite3.connect(path) as connection:
+        return connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]

@@ -312,8 +312,10 @@ def connect() -> Iterator[sqlite3.Connection]:
 
 
 def initialize_database() -> None:
-    """Create the minimal demo schema if it does not already exist."""
+    """Create or upgrade the demo schema through versioned, additive migrations."""
+    from app.services.migrations import run_migrations
+
     with connect() as connection:
-        connection.executescript(SCHEMA)
+        run_migrations(connection)
 
 
