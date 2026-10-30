@@ -197,3 +197,13 @@
 - **Checks:** CORS preflight for `http://localhost:8081` passed. Browser showed the synthetic brief, evidence rows, caveats, and the unapproved “Approve & Track for 7 Days” action. Typecheck was run; web bundle compile completed, but static web export stopped while processing existing 1×1 placeholder PNG assets with invalid CRCs (`icon.png`, `adaptive-icon.png`, `splash-icon.png`, and `favicon.png`). The development server renders successfully.
 - **Limitations:** This laptop preview does not verify Android microphone behavior or Sarvam account connectivity. The four tiny PNG assets are existing placeholders and need replacement before a clean static web export or release build.
 - **Next:** Keep the browser preview available for review, then run the voice flow on a physical phone.
+
+### 2026-10-30 — Rupee amount normalization in merchant commands
+
+- **Goal:** Make common Indian currency formatting work consistently in typed and transcribed commands without weakening the existing confirmation flow.
+- **Changes:** `mobile/src/features/home/parseMerchantCommand.ts` now accepts grouped amounts such as `₹1,000` and `₹1,00,000`, validates comma placement before conversion to integer paise, and normalizes Devanagari digits (`०१२३...`) before intent and amount parsing. Malformed grouping still returns a clarification instead of being guessed. `mobile/README.md` now describes the implemented Sarvam STT path and parser limits instead of the stale “voice not included” status.
+- **Branch/commit:** `codex/sarvam-voice-input`, commit `087c6b1` (`fix: parse grouped and Devanagari rupee amounts`), pushed to `origin`.
+- **Review:** Diff reviewed; `git diff --cached --check` passed before commit. No automated tests or live provider calls were run in this step.
+- **Safety:** The parser only creates a preview. Existing merchant confirmation, backend validation, idempotency, and ledger balance rules remain in force.
+- **Limitations:** Spoken number words such as “pachaas” are not inferred. Sarvam recording/transcription still needs a real-device and live-credential check; no Paytm production integration is claimed.
+- **Next:** Run an end-to-end merchant command rehearsal on a phone, capturing actual Sarvam transcripts and checking exact customer/product resolution and preview values before confirming any write.
