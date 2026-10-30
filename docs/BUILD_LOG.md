@@ -250,3 +250,12 @@
 - **Outcome:** Sarvam transcript, punctuation cleanup, exact alias resolution, and read-only balance retrieval all worked. The synthetic database remains unchanged by this read; it still has one text-sourced ₹50 credit and zero voice-originated ledger events.
 - **Phase status:** Phase 1's read-only voice gate is passed. The remaining gate is one merchant-previewed and confirmed synthetic voice write with correct `source_channel=voice` attribution. Phase 5 remains in progress.
 - **Next:** If the user wants to complete the voice-write gate, use a small synthetic credit command, inspect the preview, and confirm it only after verifying the customer and amount. Then check the persisted event source and balance.
+
+### 2026-10-30 — Spoken Hindi rupee amount parsing
+
+- **Finding:** Sarvam can transliterate a spoken numeric amount as a Hindi number word such as `das`; the existing parser only extracted digits, so it could not turn that transcript into an amount.
+- **Change:** `parseMerchantCommand.ts` now converts common Hindi number words from 0–99 and simple `sau`/`hazaar`/`lakh` phrases to integer rupees only when they are followed by an explicit currency unit (`rupaye`, `rupees`, etc.). Grouped numeric amounts and Devanagari digits remain supported. A number word without a currency unit requests clarification; names such as `Raju Das` remain intact. The parser's clarification text and `mobile/README.md` were updated.
+- **Branch/commit:** `codex/sarvam-voice-input`, commit `336e465` (`feat: parse spoken Hindi rupee amounts`), pushed to `origin`.
+- **Checks:** `npm run typecheck` passed. A focused parser smoke check returned `credit / Raju bhai / 1000 paise` for “das rupaye”, `repayment / Raju bhai / 25000 paise` for “do sau pachaas rupaye”, preserved “Raju Das” as a customer query, and requested clarification when `das` lacked a rupee unit.
+- **Safety:** This produces a preview only; financial writes still require merchant confirmation and backend balance validation.
+- **Next:** Retry the same voice credit command using “das rupaye”; inspect the customer and ₹10 amount in the preview before confirming.
