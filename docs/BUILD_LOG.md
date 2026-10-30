@@ -259,3 +259,13 @@
 - **Checks:** `npm run typecheck` passed. A focused parser smoke check returned `credit / Raju bhai / 1000 paise` for “das rupaye”, `repayment / Raju bhai / 25000 paise` for “do sau pachaas rupaye”, preserved “Raju Das” as a customer query, and requested clarification when `das` lacked a rupee unit.
 - **Safety:** This produces a preview only; financial writes still require merchant confirmation and backend balance validation.
 - **Next:** Retry the same voice credit command using “das rupaye”; inspect the customer and ₹10 amount in the preview before confirming.
+
+### 2026-10-30 — Phase 5 clean seed and core-flow rehearsal
+
+- **Direction:** Per user instruction, stop iterating on Hindi voice recognition for now. Keep text as the reliable input path; voice remains optional and its number transcription is documented as inconsistent.
+- **Voice audit:** The previous preview database contained a confirmed voice-originated credit of ₹10 (`source_channel=voice`) and two text-originated ₹50 credits. The read-only balance request also succeeded. That prior database was preserved; it was not cleared or overwritten.
+- **Seed fix:** `backend/seed_demo.py` previously created its rows but exited with `UnicodeEncodeError` when printing `₹` on a Windows cp1252 console. The script now reconfigures stdout to UTF-8 where supported (code commit `580b4e1`). Re-running the idempotent seed succeeded and reported Raju opening due ₹500 and Maggi stock 12 packs.
+- **Current preview state:** The backend on port 8000 now uses the separate temp database `munim-phase5-clean-demo-2026-10-30.sqlite3`; the previous preview database remains intact. Startup seeded the synthetic payment fixture. Read-only HTTP checks confirmed Raju resolution/balance, Maggi resolution/stock, empty initial payment-review queue, and local health.
+- **Isolated flow rehearsal:** On a separate scratch database, verified ₹500 opening due → confirmed ₹50 credit → ₹300 successful mock payment enters review → merchant-confirmed allocation → ₹250 due. Verified stockout leaves 12 packs unchanged, a confirmed physical count sets stock to 10, insights return 5 facts, deterministic fallback is available, and a confirmed mock action is scheduled. Nine timeline events were recorded in the scratch scenario.
+- **Phase status:** Core service-level Phase 5 rehearsal passed. Browser/phone UI rehearsal and phone-to-laptop networking remain.
+- **Next:** Rehearse the text command, inventory count, payment review/allocation, insight brief, and mock action in the browser or on the phone using the clean seeded preview. Keep voice optional.

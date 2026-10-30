@@ -4,15 +4,15 @@ This is the current phase tracker for the hackathon prototype. Keep the Git work
 
 ## Phase 1 — Merchant command and ledger
 
-**Status: Implemented; read-only voice acceptance passed, voice-write acceptance pending.**
+**Status: Core text flow implemented; one voice-originated write was observed, but Hindi number transcription remains inconsistent and is deferred.**
 
 - Text and Sarvam voice input enter the bounded deterministic command parser.
 - Customer/product aliases are resolved exactly; ambiguity or missing details stops for clarification.
 - Credit, repayment, and stockout writes show a preview, require merchant confirmation, and use idempotency keys.
 - Balances are derived from append-only ledger entries; repayments cannot exceed outstanding balance.
-- Recent voice recordings reached Sarvam successfully. The read-only request `Raju bhai ka balance batao` transcribed, resolved the exact `Raju bhai` alias, and fetched the balance. It correctly created no ledger entry.
+- A read-only voice request transcribed, resolved the exact `Raju bhai` alias, and fetched the balance. A later voice-originated ₹10 credit was also recorded. Because spoken number recognition is inconsistent, treat voice as optional and use typed commands for reliable financial entry; do not keep expanding voice scope now.
 
-**Exit gate:** Read-only voice request and exact customer resolution are verified. Still confirm one synthetic credit from voice and verify its amount/source in the timeline/database; no voice-tagged write has been made yet.
+**Exit gate:** Typed commands support the reliable financial path with preview and confirmation. Basic voice plumbing and one voice write were observed, but recognition fidelity is not a Phase 5 blocker; typed input remains the fallback.
 
 ## Phase 2 — Shop memory: inventory and timeline
 
@@ -49,9 +49,9 @@ This is the current phase tracker for the hackathon prototype. Keep the Git work
 
 **Status: In progress; this is the current phase.**
 
-1. Complete the remaining Phase 1 voice-write acceptance gate on the current browser or an Android phone.
-2. Rehearse the text command path, stock observation/count, payment review, business brief, and mock action against a clean synthetic database.
-3. Verify both services start from the documented setup and the phone can reach the backend over the demo network.
+1. **Passed (service-level):** Created a clean Phase 5 synthetic database with Raju opening due ₹500 and Maggi stock 12; preserved the previous preview database separately.
+2. **Passed (isolated logic rehearsal):** Confirmed ₹50 credit, ₹300 unmatched payment review and merchant-confirmed allocation, ending balance ₹250; stockout did not change stock before count; confirmed count set stock to 10; five facts, deterministic explanation, and scheduled mock action all worked.
+3. **Remaining:** Rehearse those paths through the browser/phone UI, verify both services start from the documented setup, and check phone-to-laptop network access.
 4. Freeze a known-good branch/commit and keep the demo script honest about synthetic data, deterministic fallback, mock publishing, and missing live Paytm integration.
 
 **Completion gate:** The complete scripted journey works from a clean seed without manual database edits, every financial write has a confirmation step, and all claims match observed behavior.
