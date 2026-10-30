@@ -17,14 +17,14 @@
    - Credit, repayment, and stockout requests show a preview and require explicit confirmation. Backend writes use idempotency keys.
    - If a credit customer is not found, the preview says that confirmation will create that exact customer and post the credit. Missing repayment/balance customers and missing products are not created automatically.
    - Stockout is recorded as an observation; on-hand quantity stays unchanged until a physical count is confirmed.
-   - This command parser is a narrow demo rule set, not an LLM command parser. The separate facts explainer can use Gemini with deterministic fallback.
+   - The deterministic parser stays first. If it cannot classify a request, the backend can ask Gemini for exact quoted intent/entity/amount spans; the client re-parses those spans and still requires exact entity resolution and merchant confirmation. Synthetic prompt examples guide phrasing but do not train Gemini. The facts explainer and command assist both fall back when Gemini is unavailable.
    - Voice button records up to 20 seconds, sends the clip to the backend for Sarvam transliteration, and places the transcript in the editable input. The merchant reviews and taps send; ledger writes still show the existing preview and require confirmation. Audio is removed from the app cache after transcription.
 
 2. **Payment Review (`PaymentReviewScreen`):**
    - Lists unmatched or review-required successful mock payments (`GET /payments/review`).
-   - Can add a clearly labelled synthetic ₹300 payment to populate the review queue (`POST /payments/intake`).
+   - Can add a clearly labelled synthetic payment using an editable rupee amount to populate the review queue (`POST /payments/intake`).
    - Explicit synthetic mock disclaimer banner.
-   - Merchant-confirmed manual allocation to a verified customer (`POST /payments/{event_id}/allocate`).
+   - Merchant-confirmed manual allocation to a verified customer (`POST /payments/{event_id}/allocate`); payments above the current due are rejected with a readable message and do not create ledger entries.
 
 3. **Inventory & Stock (`InventoryScreen`):**
    - Product alias resolution (`GET /products/resolve`) and product catalog creation (`POST /products`).
@@ -84,6 +84,16 @@ npm run android
 
 This prints a **QR code** in the terminal. Open **Expo Go** on your Android
 phone, tap **"Scan QR code"**, and point the camera at the code.
+
+## Browser preview
+
+Install dependencies with `npm ci`, start the backend on port `8000`, then run:
+
+```bash
+npm run web
+```
+
+The backend allows the default Expo Web origins on port `8081`; set backend-only `MUNIM_CORS_ORIGINS` if you use another port. Browser preview is useful for reviewing screens and synthetic insights. Microphone capture and Sarvam transcription still need a real device/provider check.
 
 > **Same-network requirement:** your laptop and phone must be on the same
 > Wi-Fi network. If on a hotspot, scan the QR code from the Expo Go app
@@ -173,8 +183,9 @@ mobile/
 
 | Feature | Status |
 |---|---|
-| Microphone / speech permission | ❌ Not requested (text fallback active) |
-| Sarvam STT / TTS | ❌ Not included (future stretch) |
+| Microphone / speech permission | ✅ Requested at runtime when the merchant starts recording; text fallback remains available |
+| Sarvam STT | ✅ Optional backend transcription; requires `SARVAM_API_KEY` and a real-device/provider check |
+| Sarvam TTS | ❌ Not included |
 | Live Paytm API / processor | ❌ Never claimed (mock UPI intake only) |
 | Customer / Ledger mutations | ✅ Implemented via backend v0.5 |
 | Text commands for udhaar, jama, balance, and stockout | ✅ Limited deterministic parser; confirmation required before writes |
@@ -221,6 +232,12 @@ in `backend/README.md` before opening the app.
   before any EAS or production build.
 - The local input log (history cards on the home screen) is in-memory only;
   it resets on reload.
-- Text path is the only input channel. Voice is a Phase 3 stretch goal,
-  pending Sarvam credentials and tested latency.
+- Voice transcription is implemented through the backend Sarvam adapter, but
+  real-device microphone capture and live provider connectivity still need a
+  check. Every transcript remains editable and data-changing commands still
+  require the normal merchant preview and confirmation.
+- The deterministic command parser accepts numeric rupee amounts with Indian
+  or western comma grouping, Devanagari digits, and common Hindi number words
+  when they are followed by a rupee unit (for example, “das rupaye”). A number
+  word without a currency unit asks for clarification rather than being guessed.
 

@@ -145,6 +145,42 @@ class BusinessEventView(StrictModel):
     created_at: datetime
 
 
+class RecentPaymentSummary(StrictModel):
+    event_id: str
+    amount_paise: int
+    payment_status: Literal["SUCCESS", "PENDING", "FAILED", "REVERSED"]
+    resolution_status: Literal["ALLOCATED", "REVIEW", "UNMATCHED", "IGNORED"]
+    reason: str | None
+    occurred_at: datetime
+
+
+class ActivitySummaryView(StrictModel):
+    data_mode: Literal["synthetic", "merchant_entered", "provider_mock"]
+    period_label: str
+    recorded_event_count: int
+    credit_entry_count: int
+    credit_total_paise: int
+    repayment_entry_count: int
+    repayment_total_paise: int
+    payment_event_count: int
+    successful_payment_count: int
+    successful_payment_total_paise: int
+    pending_payment_count: int
+    pending_payment_total_paise: int
+    failed_payment_count: int
+    failed_payment_total_paise: int
+    open_review_payment_count: int
+    open_review_payment_total_paise: int
+    reversed_payment_count: int
+    reversed_payment_total_paise: int
+    stockout_observation_count: int
+    physical_count_event_count: int
+    recent_payments: list[RecentPaymentSummary]
+    latest_events: list[BusinessEventView]
+    summary_text: str
+    caveats: list[str]
+
+
 class FactView(StrictModel):
     id: str
     label: str
@@ -187,6 +223,26 @@ class BriefExplanationResponse(StrictModel):
     action_type: Literal["counter_notice", "qr_offer_mock"]
     fallback_used: bool
     validation_errors: list[str] = Field(default_factory=list)
+
+
+class CommandInterpretRequest(StrictModel):
+    utterance: str = Field(min_length=1, max_length=240)
+    source_channel: Literal["text", "voice"] = "text"
+
+
+class CommandInterpretResponse(StrictModel):
+    status: Literal["ready", "clarification", "unavailable"]
+    intent: Literal[
+        "credit", "repayment", "balance", "customer_create", "stockout",
+        "stock_check", "stock_count", "payment_summary", "timeline_summary",
+    ] | None = None
+    entity_text: str | None = None
+    amount_text: str | None = None
+    count_text: str | None = None
+    confidence: float = Field(ge=0, le=1)
+    message: str | None = None
+    provider_used: Literal["gemini", "fallback"]
+    fallback_used: bool
 
 
 class MockActionCreate(StrictModel):

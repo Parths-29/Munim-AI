@@ -36,6 +36,8 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 The health response confirms only that the local API process is responding. It does not indicate a Paytm connection or a ready database.
 
+For Expo Web, local CORS origins default to `http://localhost:8081` and `http://127.0.0.1:8081`. Override them with the comma-separated backend variable `MUNIM_CORS_ORIGINS` when the web dev server uses another origin. Native phone builds do not use CORS.
+
 ## Current endpoints
 
 | Method | Path | Purpose |

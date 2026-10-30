@@ -8,11 +8,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { fetchEvents, TimelineEvent } from '@/api/ledgerClient';
+import { fetchActivitySummary, fetchEvents, ActivitySummaryResponse, TimelineEvent } from '@/api/ledgerClient';
 import { SyntheticDataPill } from '@/components/InfoBanner';
 
 export default function TimelineScreen() {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
+  const [summary, setSummary] = useState<ActivitySummaryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,6 +23,9 @@ export default function TimelineScreen() {
     try {
       const data = await fetchEvents(50);
       setEvents(data);
+      const activitySummary = await fetchActivitySummary().catch(() => null);
+      setSummary(activitySummary);
+      if (!activitySummary) setError('Detailed summary is unavailable right now; the event list is still available below.');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Failed to load timeline events: ${message}`);
@@ -65,6 +69,36 @@ export default function TimelineScreen() {
       <Text style={styles.subtitle}>
         Append-only business memory stream. Audit trail for credit, repayment, counts, and mock payments.
       </Text>
+
+      {summary && (
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryTitle}>Shop Activity Summary</Text>
+          <Text style={styles.summaryPeriod}>{summary.period_label}</Text>
+          <Text style={styles.summaryDescription}>{summary.summary_text}</Text>
+          <View style={styles.summaryGrid}>
+            <Text style={styles.summaryMetric}>Credits: {summary.credit_entry_count} · ₹{(summary.credit_total_paise / 100).toFixed(2)}</Text>
+            <Text style={styles.summaryMetric}>Repayments: {summary.repayment_entry_count} · ₹{(summary.repayment_total_paise / 100).toFixed(2)}</Text>
+            <Text style={styles.summaryMetric}>Successful mock payments: {summary.successful_payment_count} · ₹{(summary.successful_payment_total_paise / 100).toFixed(2)}</Text>
+            <Text style={styles.summaryMetric}>Waiting for review: {summary.open_review_payment_count} · ₹{(summary.open_review_payment_total_paise / 100).toFixed(2)}</Text>
+            <Text style={styles.summaryMetric}>Pending / failed / reversed: {summary.pending_payment_count} / {summary.failed_payment_count} / {summary.reversed_payment_count}</Text>
+            <Text style={styles.summaryMetric}>Stockout notes / physical counts: {summary.stockout_observation_count} / {summary.physical_count_event_count}</Text>
+            <Text style={styles.summaryMetric}>Recorded events: {summary.recorded_event_count}</Text>
+          </View>
+          {summary.recent_payments.length > 0 && (
+            <View style={styles.recentPayments}>
+              <Text style={styles.recentPaymentsTitle}>Latest mock payment events</Text>
+              {summary.recent_payments.map((payment) => (
+                <Text key={payment.event_id} style={styles.recentPaymentLine}>
+                  {payment.payment_status} · ₹{(payment.amount_paise / 100).toFixed(2)} · {payment.resolution_status}{payment.reason ? ` (${payment.reason.replace(/_/g, ' ')})` : ''}
+                </Text>
+              ))}
+            </View>
+          )}
+          {summary.caveats.map((caveat, index) => (
+            <Text key={index} style={styles.summaryCaveat}>• {caveat}</Text>
+          ))}
+        </View>
+      )}
 
       {error && (
         <View style={styles.errorBanner}>
@@ -132,6 +166,16 @@ const styles = StyleSheet.create({
   refreshBtn: { flexDirection: 'row', alignItems: 'center', padding: 6 },
   refreshText: { marginLeft: 4, color: '#0f3460', fontWeight: '600', fontSize: 13 },
   subtitle: { fontSize: 13, color: '#6c757d', marginBottom: 14 },
+  summaryCard: { backgroundColor: '#e8f4fd', borderWidth: 1, borderColor: '#b6d4fe', borderRadius: 8, padding: 12, marginBottom: 14 },
+  summaryTitle: { color: '#0f3460', fontSize: 15, fontWeight: '800', marginBottom: 3 },
+  summaryPeriod: { color: '#6c757d', fontSize: 10, marginBottom: 7 },
+  summaryDescription: { color: '#212529', fontSize: 12, lineHeight: 17, marginBottom: 7 },
+  summaryGrid: { gap: 4, marginBottom: 7 },
+  summaryMetric: { color: '#34495e', fontSize: 11, lineHeight: 15 },
+  recentPayments: { borderTopWidth: 1, borderTopColor: '#b6d4fe', paddingTop: 7, marginBottom: 5 },
+  recentPaymentsTitle: { color: '#0f3460', fontSize: 11, fontWeight: '700', marginBottom: 3 },
+  recentPaymentLine: { color: '#34495e', fontSize: 10, lineHeight: 14 },
+  summaryCaveat: { color: '#856404', fontSize: 10, lineHeight: 14, marginTop: 2 },
   errorBanner: {
     backgroundColor: '#f8d7da',
     padding: 10,

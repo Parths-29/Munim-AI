@@ -4,7 +4,7 @@
 
 **Munim-AI** is the merchant-facing copilot; **KiranaOS** is the structured memory layer behind it. The hackathon prototype focuses on recording customer credit (udhaar), stock events, and payment events safely, then answering questions and suggesting actions the shopkeeper approves. It targets the **Merchant Growth AI** track of the Paytm Build for India AI Hackathon, Mumbai Edition.
 
-> **Current status:** Phase 1. The repository has product/contracts documentation and a minimal FastAPI health scaffold. The Expo scaffold and all business workflows are still pending; no live Paytm integration is claimed.
+> **Current status:** A working synthetic-data prototype with ledger, inventory, payment review, business insights, mock merchant-approved actions, and browser command flow. Phase 5 browser/demo acceptance is in progress. Gemini currently falls back after provider errors/timeouts; no live Paytm integration is claimed.
 
 ## The problem we are solving
 
@@ -57,14 +57,13 @@ The larger KiranaOS product vision includes delivery, supplier workflows, offlin
 
 ## Build status and next steps
 
-1. Run the current product branch on the demo phone and confirm LAN access to the backend.
-2. Verify Sarvam transcription with the team's backend key and a short Hindi/Hinglish recording; typed input remains available.
-3. Rehearse one voice/text request through transcript review, command preview, merchant confirmation, and the saved action card.
-4. Check the persisted action and scheduled observation window after restarting the app.
-5. Integrate the fraud model only after a clean run and a clear explanation of its research limitations.
-6. Rehearse a short end-to-end demo with one planted scenario and an honest limitations slide.
+The current phase is integrated demo readiness. The browser payment-review journey is verified: a successful synthetic ₹300 payment was manually allocated after merchant confirmation, the review queue cleared, and Raju's derived due ended at ₹250. The user intentionally counted Maggi at zero; a separate stockout observation has not been recorded in this run. The synthetic facts brief loads with deterministic fallback, and a merchant-edited counter notice is saved as `APPROVED_MOCK` with a scheduled seven-day observation. Phone-to-laptop networking and the complete clean-seed rehearsal remain. See the [browser demo walkthrough](docs/BROWSER_DEMO_WALKTHROUGH.md) for the fresh-seed rehearsal steps.
+
+Gemini is configured in the local ignored `.env`, but recent upstream requests returned HTTP 503 or timed out; deterministic explanations and command clarification remain available. Continue voice recognition work only after the core browser path is stable. Integrate the fraud model only after a clean run and a clear explanation of its research limitations.
 
 For current product requirements, open [docs/KIRANAOS_HACKATHON_PRD.md](docs/KIRANAOS_HACKATHON_PRD.md). For continuously coordinated work, branch ownership, and the Git/PR loop, open [docs/CONTINUOUS_COLLABORATION.md](docs/CONTINUOUS_COLLABORATION.md). [docs/PRD.md](docs/PRD.md), [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md), and [docs/HACKATHON_EXECUTION_PLAN.md](docs/HACKATHON_EXECUTION_PLAN.md) preserve earlier iterations and are not the current workflow.
+
+For a self-contained explanation of the problem statement, current implementation, evidence, limits, and next steps, see [docs/PROJECT_BRIEF_AND_CURRENT_STATE.md](docs/PROJECT_BRIEF_AND_CURRENT_STATE.md).
 
 ## Evidence and references
 

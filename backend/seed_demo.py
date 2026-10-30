@@ -1,5 +1,7 @@
 """Create the repeatable synthetic Raju fixture for local demos."""
 
+import sys
+
 from app.domain.models import CustomerCreate, LedgerWrite, ProductCreate, StockCountCreate
 from app.services.database import DEMO_SHOP_ID, initialize_database
 from app.services.inventory import create_product, record_stock_count
@@ -7,6 +9,9 @@ from app.services.ledger import create_customer, get_balance, post_credit
 
 
 def main() -> None:
+    # Windows consoles may default to cp1252, which cannot print the rupee sign.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     initialize_database()
     customer = create_customer(
         CustomerCreate(

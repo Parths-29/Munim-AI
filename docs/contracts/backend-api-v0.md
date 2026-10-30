@@ -1,12 +1,22 @@
-# Backend API contract v0.7
+# Backend API contract v0.8
 
 This describes the synthetic single-shop backend slice on the current task branch. It supplements the AI proposal schemas; it is not a Paytm API contract.
 
 Base URL for local development: `http://127.0.0.1:8000`. Money is integer paise. The demo shop is fixed to `shop_synth_01`; there is no authentication or multi-shop isolation in this prototype.
 
+Expo Web development origins default to `http://localhost:8081` and `http://127.0.0.1:8081`. Set backend-only `MUNIM_CORS_ORIGINS` to a comma-separated allowlist if the web dev server uses a different origin; do not use a wildcard in a deployed environment.
+
+## `POST /commands/interpret`
+
+Optional read-only NLP assist for a typed command or an already-created speech transcript. The client calls it only when its deterministic parser cannot classify the request. It returns a structured draft (`intent`, exact `entity_text`, exact `amount_text`, and confidence) or asks for clarification. It never resolves IDs or writes to the ledger/inventory. The client re-parses the returned spans locally, then uses the same exact-entity lookup, preview, and explicit confirmation flow as other commands. If Gemini is missing or unavailable, the route returns a controlled fallback after an 8-second request timeout. `GEMINI_MODEL` can override the default `gemini-3.8-flash` model ID.
+
+Request: `{ "utterance": "what does Raju owe?", "source_channel": "text" }`. A successful interpretation returns `status: "ready"`, `intent: "balance"`, `entity_text: "Raju"`, `amount_text: null`, and a confidence score. For credit/repayment, `amount_text` must quote an explicit rupee amount from the utterance. A fallback returns `status: "unavailable"` and `provider_used: "fallback"`.
+
+The prompt uses a small set of synthetic Hinglish/English command examples stored in `backend/app/services/command_nlp.py`. These are few-shot examples only; they do not train or fine-tune Gemini. No ledger rows, transaction history, customer IDs, or product IDs are sent to Gemini. When enabled, the submitted utterance itself is sent to Google's Gemini API, so users should avoid including unrelated sensitive details.
+
 ## `POST /speech/transcribe`
 
-Accepts a multipart form field named `file` with a supported audio MIME type and returns `{ "transcript", "language_code", "request_id", "provider" }`. Audio is forwarded server-to-server to Sarvam's short-form `/speech-to-text` REST endpoint using model `saaras:v4` and `mode=translit`, which keeps Hindi/Hinglish commands compatible with the current Latin-script parser. The backend requires `SARVAM_API_KEY` as an environment variable or in a gitignored backend/root `.env`; the key is never sent to the mobile app. Uploads are capped at 12 MB, the app caps recordings at 20 seconds, and audio is not written to the database or disk by the endpoint. The transcript only fills the input box; sending it runs the existing parser, and any write still needs merchant confirmation. If Sarvam is unconfigured or unavailable, typed input remains available.
+Accepts a multipart form field named `file` with a supported audio MIME type and returns `{ "transcript", "language_code", "request_id", "provider" }`. Browser WebM uploads are normalized from codec-qualified, generic-binary, or `video/webm` metadata to `audio/webm`; a known file extension is used as a fallback for generic binary uploads. Audio is forwarded server-to-server to Sarvam's short-form `/speech-to-text` REST endpoint using model `saaras:v4` and `mode=translit`, which keeps Hindi/Hinglish commands compatible with the current Latin-script parser. The backend requires `SARVAM_API_KEY` as an environment variable or in a gitignored backend/root `.env`; the key is never sent to the mobile app. Uploads are capped at 12 MB, the app caps recordings at 20 seconds, and audio is not written to the database or disk by the endpoint. The transcript only fills the input box; sending it runs the existing parser, and any write still needs merchant confirmation. If Sarvam is unconfigured or unavailable, typed input remains available.
 
 ## `GET /health`
 
@@ -91,6 +101,10 @@ Request fields: `product_id`, non-negative integer `counted_quantity`, `source_e
 
 Returns recent event IDs, event types, related entity, source event/channel/utterance, status, summary, and timestamp. The endpoint is read-only; it does not expose payment-provider credentials or raw customer contact data.
 
+## `GET /events/summary`
+
+Returns deterministic aggregate counts and totals for ledger credits/repayments, mock payment statuses, successful events awaiting review, inventory observations/counts, the latest five payment events, and latest five timeline events. `period_label` explicitly identifies the covered synthetic demo history. Mock successful payments are reported separately from repayments actually posted to the ledger; no causal or live-feed claims are made.
+
 ## `GET /insights/facts?persona=kirana`
 
 Returns facts in the shape defined by `docs/contracts/facts.schema.json`. Supported personas are `kirana`, `tea_stall`, and `medical_store`. The API seeds a deterministic 90-day synthetic transaction fixture when its local database is empty. The current window is the latest 7 full fixture days and the comparison is the preceding 7 full days. Values are computed in Python from rows; no LLM computes metrics. Raw payer tokens are never included in the response. Collections are UPI-only, lapsed-payer counts are synthetic-token counts, and before/after differences are not causal claims.
@@ -113,6 +127,10 @@ Returns facts in the shape defined by `docs/contracts/facts.schema.json`. Suppor
 
 An event is automatically allocated as a repayment only when its status is `SUCCESS`, its payer token has an exact confirmed mapping, and its full amount is no greater than that customer's outstanding balance. Failed, pending, or reversed events do not change the ledger. Missing mapping, no balance, or amount above balance is not auto-allocated. `GET /payments/review` lists unresolved successful events. `POST /payments/{event_id}/allocate` allows a merchant-confirmed manual allocation to a selected demo customer after checking that the full amount fits the outstanding balance. Neither path performs partial allocation. Payment events and manual resolutions are append-only; ledger balances remain derived from ledger entries.
 
+## `POST /commands/interpret`
+
+Gemini-assisted, read-only interpretation of one merchant utterance into a bounded supported intent and exact quoted name/amount/count spans. Supported intents include credit, repayment, balance, customer creation, stockout observation, stock lookup, physical count, payment summary, and timeline summary. Missing credentials, upstream errors, low confidence, or invalid spans return a clarification/unavailable result. This endpoint never writes; the client reparses locally, resolves an exact entity, previews every mutation, and requires explicit merchant confirmation.
+
 ## Explicitly not implemented in v0.5
 
-Voice/LLM command parsing, live action publication, authentication, and production payment integration. The facts-only explanation endpoint above is read-only and does not imply these behaviors exist.
+Live action publication, authentication, and production payment integration. Voice transcription is an input convenience and is not guaranteed to recognize names or spoken amounts correctly; the transcript must be reviewed. The facts-only explanation and command interpretation endpoints do not imply live Paytm connectivity or autonomous writes.

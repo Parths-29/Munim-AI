@@ -8,7 +8,7 @@
 **Active work branch:** `codex/sarvam-voice-input`, based on `codex/mock-action-outcomes` at `5a990b5`
 **Base lineage:** `origin/main` at `318863e` (includes merged PR #10), plus pushed mock-action tracking milestone.
 **Latest pushed commit:** `91f62cc` — `feat: add Sarvam voice input with merchant confirmation`
-**Working tree:** clean after the voice-input milestone.
+**Working tree:** local browser-preview support is being recorded on this branch.
 **Merge status:** PRs #7–#10 are in `main`; mock-action tracking and voice input are pushed feature branches, with no PR opened by Codex.
 
 ### Product and scope
@@ -189,3 +189,159 @@
 - **Not yet verified:** Actual Sarvam account/credential connectivity and recording/transcription on a physical phone. No live API call was made to avoid consuming quota; type/build checks do not prove microphone or provider behavior on-device.
 - **Limitations:** The fixed parser supports a narrow Romanized Hindi/Hinglish command set and numeric amounts; unclear or unsupported transcripts stop for manual correction. Recording cap is 20 seconds in the app; the backend also caps uploads at 12 MB. Text remains available if voice is unavailable.
 - **Next:** Push this branch, then have the team try one spoken command on the demo phone with the backend's `SARVAM_API_KEY` configured. Use the observed transcript to fix recognition/parser issues before adding voice responses or broad language understanding.
+
+### 2026-10-30 — Local browser preview
+
+- **Goal:** Let the team review the actual app screens on the laptop browser as well as Expo Go.
+- **Changes:** Added Expo Web runtime dependencies (`react-dom`, `react-native-web`), local-origin CORS middleware configurable by backend-only `MUNIM_CORS_ORIGINS`, and setup instructions. The preview ran at `http://localhost:8081/` against an isolated synthetic SQLite database; the business brief and pending action card rendered using deterministic Gemini fallback.
+- **Checks:** CORS preflight for `http://localhost:8081` passed. Browser showed the synthetic brief, evidence rows, caveats, and the unapproved “Approve & Track for 7 Days” action. Typecheck was run; web bundle compile completed, but static web export stopped while processing existing 1×1 placeholder PNG assets with invalid CRCs (`icon.png`, `adaptive-icon.png`, `splash-icon.png`, and `favicon.png`). The development server renders successfully.
+- **Limitations:** This laptop preview does not verify Android microphone behavior or Sarvam account connectivity. The four tiny PNG assets are existing placeholders and need replacement before a clean static web export or release build.
+- **Next:** Keep the browser preview available for review, then run the voice flow on a physical phone.
+
+### 2026-10-30 — Rupee amount normalization in merchant commands
+
+- **Goal:** Make common Indian currency formatting work consistently in typed and transcribed commands without weakening the existing confirmation flow.
+- **Changes:** `mobile/src/features/home/parseMerchantCommand.ts` now accepts grouped amounts such as `₹1,000` and `₹1,00,000`, validates comma placement before conversion to integer paise, and normalizes Devanagari digits (`०१२३...`) before intent and amount parsing. Malformed grouping still returns a clarification instead of being guessed. `mobile/README.md` now describes the implemented Sarvam STT path and parser limits instead of the stale “voice not included” status.
+- **Branch/commit:** `codex/sarvam-voice-input`, commit `087c6b1` (`fix: parse grouped and Devanagari rupee amounts`), pushed to `origin`.
+- **Review:** Diff reviewed; `git diff --cached --check` passed before commit. No automated tests or live provider calls were run in this step.
+- **Safety:** The parser only creates a preview. Existing merchant confirmation, backend validation, idempotency, and ledger balance rules remain in force.
+- **Limitations:** Spoken number words such as “pachaas” are not inferred. Sarvam recording/transcription still needs a real-device and live-credential check; no Paytm production integration is claimed.
+- **Next:** Run an end-to-end merchant command rehearsal on a phone, capturing actual Sarvam transcripts and checking exact customer/product resolution and preview values before confirming any write.
+
+### 2026-10-30 — Browser voice upload and provider connectivity diagnosis
+
+- **Goal:** Fix the browser voice upload shape and identify why speech, Gemini, and MongoDB appeared disconnected.
+- **Changes:** `mobile/src/api/ledgerClient.ts` now reads the browser recording URI as a real `Blob`, derives its MIME type (including removing codec parameters), and sends WebM with a `.webm` filename where appropriate. Native uploads retain the React Native file descriptor. `HomeScreen.tsx` displays the specific recording/transcription error inline and releases browser blob URLs after use.
+- **Local secret configuration:** Sarvam was present in the separate local work checkout but missing from this checkout's `.env`; only the Sarvam entry was copied into this checkout's ignored `.env`. No credential was added to Git or printed. The backend resolver now finds it.
+- **Connectivity:** A synthetic tone reached Sarvam directly (HTTP 200) and through local `POST /speech/transcribe` (HTTP 422 “No speech detected”), confirming auth, endpoint, and backend forwarding; a tone is intentionally not treated as successful speech recognition. MongoDB Atlas authenticated `ping` succeeded. Gemini returned HTTP 401 for the configured key (“API key not valid”); the facts flow will continue using deterministic fallback until that key is replaced. The app itself currently uses SQLite and does not use MongoDB.
+- **Checks:** `npm run typecheck` passed. No real user audio was recorded or transmitted. No browser microphone permission was granted by Codex.
+- **Limitations:** A real spoken recording from the browser or phone is still needed to verify audio capture and transcription end to end. A browser must be allowed microphone access; an in-app browser may restrict that permission. Gemini remains unconfigured effectively until a valid key is supplied.
+- **Next:** Reopen/reload the local browser preview, allow microphone access if prompted, record one short spoken command, and confirm the returned transcript appears in the editable input. Then test the same flow on the Android device. Replace the invalid Gemini key separately if Gemini summaries are needed.
+
+### 2026-10-30 — Normalize browser recording MIME metadata
+
+- **Goal:** Resolve the reported `415 Unsupported audio format` error from browser voice uploads.
+- **Cause:** Web `FormData` uses the MIME type stored on the Blob itself; deriving a normalized type for the filename alone did not remove codec parameters from that Blob. Browser media recorders may also label audio-only WebM as `video/webm` or `application/octet-stream`.
+- **Changes:** The mobile client now wraps browser audio in a new Blob with a normalized supported audio MIME type. The backend strips MIME codec parameters, normalizes `video/webm`, and infers the media type from a known filename extension only when the upload advertises a generic binary type. Unsupported types still fail closed with a clearer error mentioning WebM.
+- **Files:** `mobile/src/api/ledgerClient.ts`, `backend/app/api/speech.py`, and `docs/contracts/backend-api-v0.md`.
+- **Checks:** Mobile `npm run typecheck` and backend `python -m compileall -q app` passed. A focused in-memory route check confirmed `audio/webm;codecs=opus`, `video/webm`, and `application/octet-stream` plus a `.webm` filename all normalize to `audio/webm` before forwarding. No real recording was captured in this check.
+- **Runtime:** Restarted the local Uvicorn process so it loaded the updated route; `/health` remains available on port 8000. The Expo Web dev server remains on port 8081.
+- **Next:** Retry a short real recording in the browser. If upload gets past validation, Sarvam should return either a transcript or a distinct “no speech detected” response. Report the exact new message if it still fails.
+
+### 2026-10-30 — Strip transcript punctuation before exact customer matching
+
+- **Finding:** Recent local backend logs show the speech endpoint returning HTTP 200 repeatedly, followed by a customer lookup query containing trailing punctuation (`Raju bhai .`). The preview database has no voice-tagged business events, so those attempts did not post a voice-originated ledger action.
+- **Change:** `cleanCustomerQuery` now removes sentence periods and common Indic punctuation before exact-match lookup. This keeps recognized sentence-ending punctuation out of customer/product names while leaving the merchant's original utterance available for the preview/audit path.
+- **Branch/commit:** `codex/sarvam-voice-input`, commit `63e6bff` (`fix: trim punctuation from voice customer names`), pushed to `origin`.
+- **Checks:** Mobile TypeScript typecheck passed; `git diff --check` passed.
+- **Next:** Retry a read-only voice command first. Confirm the editable transcript is clean and the customer lookup resolves before trying a write command; any ledger change still requires explicit confirmation.
+
+### 2026-10-30 — Current delivery phases reconciled with implementation
+
+- **Goal:** Make the remaining work clear after completing the main backend and mobile logic slices.
+- **Change:** Replaced the archived five-phase draft with a live delivery tracker in `docs/HACKATHON_EXECUTION_PLAN.md`: merchant command/ledger, shop memory, mock payment reconciliation, merchant growth brief/action, and integrated demo readiness. Each phase now has an explicit status and evidence-based exit gate. Plan commit `7f46bff` is pushed to `codex/sarvam-voice-input`.
+- **Current phase:** Phase 5, integrated demo readiness. The immediate acceptance item is one clean read-only voice command after the punctuation fix; a voice-originated write has not yet been confirmed in the local demo database.
+- **Limitations:** Gemini is still unauthenticated and the app uses deterministic fallback; MongoDB is not integrated into this SQLite prototype; no real Paytm feed is connected.
+- **Next:** Finish the voice acceptance gate, then rehearse the remaining flows against a clean synthetic seed and record any failures as small follow-up tasks.
+
+### 2026-10-30 — Read-only voice request verified end to end
+
+- **Evidence:** Local backend logged `POST /speech/transcribe` HTTP 200, `GET /customers/resolve?query=Raju bhai` HTTP 200, and `GET /ledger/customers/{id}/balance` HTTP 200 for the user's latest voice attempt.
+- **Outcome:** Sarvam transcript, punctuation cleanup, exact alias resolution, and read-only balance retrieval all worked. The synthetic database remains unchanged by this read; it still has one text-sourced ₹50 credit and zero voice-originated ledger events.
+- **Phase status:** Phase 1's read-only voice gate is passed. The remaining gate is one merchant-previewed and confirmed synthetic voice write with correct `source_channel=voice` attribution. Phase 5 remains in progress.
+- **Next:** If the user wants to complete the voice-write gate, use a small synthetic credit command, inspect the preview, and confirm it only after verifying the customer and amount. Then check the persisted event source and balance.
+
+### 2026-10-30 — Spoken Hindi rupee amount parsing
+
+- **Finding:** Sarvam can transliterate a spoken numeric amount as a Hindi number word such as `das`; the existing parser only extracted digits, so it could not turn that transcript into an amount.
+- **Change:** `parseMerchantCommand.ts` now converts common Hindi number words from 0–99 and simple `sau`/`hazaar`/`lakh` phrases to integer rupees only when they are followed by an explicit currency unit (`rupaye`, `rupees`, etc.). Grouped numeric amounts and Devanagari digits remain supported. A number word without a currency unit requests clarification; names such as `Raju Das` remain intact. The parser's clarification text and `mobile/README.md` were updated.
+- **Branch/commit:** `codex/sarvam-voice-input`, commit `336e465` (`feat: parse spoken Hindi rupee amounts`), pushed to `origin`.
+- **Checks:** `npm run typecheck` passed. A focused parser smoke check returned `credit / Raju bhai / 1000 paise` for “das rupaye”, `repayment / Raju bhai / 25000 paise` for “do sau pachaas rupaye”, preserved “Raju Das” as a customer query, and requested clarification when `das` lacked a rupee unit.
+- **Safety:** This produces a preview only; financial writes still require merchant confirmation and backend balance validation.
+- **Next:** Retry the same voice credit command using “das rupaye”; inspect the customer and ₹10 amount in the preview before confirming.
+
+### 2026-10-30 — Phase 5 clean seed and core-flow rehearsal
+
+- **Direction:** Per user instruction, stop iterating on Hindi voice recognition for now. Keep text as the reliable input path; voice remains optional and its number transcription is documented as inconsistent.
+- **Voice audit:** The previous preview database contained a confirmed voice-originated credit of ₹10 (`source_channel=voice`) and two text-originated ₹50 credits. The read-only balance request also succeeded. That prior database was preserved; it was not cleared or overwritten.
+- **Seed fix:** `backend/seed_demo.py` previously created its rows but exited with `UnicodeEncodeError` when printing `₹` on a Windows cp1252 console. The script now reconfigures stdout to UTF-8 where supported (code commit `580b4e1`). Re-running the idempotent seed succeeded and reported Raju opening due ₹500 and Maggi stock 12 packs.
+- **Current preview state:** The backend on port 8000 now uses the separate temp database `munim-phase5-clean-demo-2026-10-30.sqlite3`; the previous preview database remains intact. Startup seeded the synthetic payment fixture. Read-only HTTP checks confirmed Raju resolution/balance, Maggi resolution/stock, empty initial payment-review queue, and local health.
+- **Isolated flow rehearsal:** On a separate scratch database, verified ₹500 opening due → confirmed ₹50 credit → ₹300 successful mock payment enters review → merchant-confirmed allocation → ₹250 due. Verified stockout leaves 12 packs unchanged, a confirmed physical count sets stock to 10, insights return 5 facts, deterministic fallback is available, and a confirmed mock action is scheduled. Nine timeline events were recorded in the scratch scenario.
+- **Phase status:** Core service-level Phase 5 rehearsal passed. Browser/phone UI rehearsal and phone-to-laptop networking remain.
+- **Next:** Rehearse the text command, inventory count, payment review/allocation, insight brief, and mock action in the browser or on the phone using the clean seeded preview. Keep voice optional.
+
+### 2026-10-30 — Browser command NLP assist (Gemini-backed, preview-only)
+
+- **Goal:** Continue the browser product flow while pausing further microphone/STT tuning, and let the app understand a wider range of typed requests (or an existing transcript) without allowing AI to make writes.
+- **Changes:** Added `POST /commands/interpret` and a Gemini-backed interpreter that returns only a bounded intent plus exact entity and amount spans quoted from the utterance. The browser calls it only when the deterministic parser says the command is unsupported. The response is re-parsed locally, then continues through exact customer/product resolution, existing preview, and explicit confirmation.
+- **Synthetic NLP examples:** Added English and Hinglish patterns for credit, repayment, balance, stockout, missing amounts, ambiguous amounts, and mixed intents. These examples are prompt-only guidance; they do not train/fine-tune Gemini and do not contain merchant history. No ledger rows or entity IDs are sent to the model. When Gemini is enabled, only the utterance is sent to Google's API.
+- **Fallback and safety:** Without a working Gemini credential or on provider/validation failure, the endpoint returns a controlled clarification/unavailable response. Amount spans must be copied from the original and include an explicit rupee marker/unit; the deterministic parser still performs any supported amount normalization. Model-suggested entity strings must appear verbatim in the utterance. No endpoint write was added.
+- **Current provider state:** Existing local Gemini credential previously returned HTTP 401; the live model branch is therefore unverified and deterministic fallback remains expected until the credential is replaced. The default model ID remains configurable via backend-only `GEMINI_MODEL` (default `gemini-3.8-flash`).
+- **Files:** `backend/app/domain/models.py`, `backend/app/main.py`, new `backend/app/api/commands.py`, new `backend/app/services/command_nlp.py`, `mobile/src/api/ledgerClient.ts`, `mobile/src/features/home/HomeScreen.tsx`, `docs/contracts/backend-api-v0.md`, `docs/HACKATHON_EXECUTION_PLAN.md`.
+- **Checks:** Mobile TypeScript typecheck passed. Backend `compileall` passed. `git diff --check` passed. No live Gemini call was made during this implementation step.
+- **Next:** Confirm the new clarification/fallback message in the browser using an unsupported typed phrasing. Once a valid Gemini key is configured, verify one benign balance query and one amount-bearing command end to end, inspecting the preview and cancelling before any write if desired.
+
+### 2026-10-30 — Gemini key refresh check and browser payment-review readiness
+
+- **Gemini configuration:** Confirmed a non-placeholder `GEMINI_API_KEY` is present in the ignored root `.env` without printing or committing it. Restarted the local backend without an environment override so it reads that value. Two browser-NLP route attempts returned controlled fallback; a direct minimal Gemini request returned HTTP 503. The key is being loaded, but successful Gemini inference is not verified yet.
+- **Read-only browser-data audit:** Local demo database currently reports Raju due ₹250, Maggi stock 12, seven timeline events, and one successful unmatched mock payment of ₹300 with reason `payer_token_missing`.
+- **Payment behavior:** Manual allocation of that ₹300 payment was rejected with HTTP 409 because it exceeds the customer's current ₹250 due. This is expected balance protection; no repayment was posted. Updated the browser error mapping to show both values and state that no ledger entry was created. Changed the next demo payment button to add a synthetic ₹200 payment so it can fit the current ₹250 due when manually confirmed.
+- **Next:** Refresh the browser and use the new ₹200 mock payment for the eligible manual-allocation path. Keep the old ₹300 item unresolved as an example of an over-balance payment being held safely. Retry Gemini later when the provider stops returning 503.
+
+### 2026-10-30 — Browser payment review verified; Phase 5 moved to inventory and growth brief
+
+- **Browser evidence:** The latest backend timeline records a merchant-confirmed ₹300 payment allocation (`REPAYMENT_POSTED`), the payment review queue is empty, and Raju's balance is ₹250. This matches the demo arithmetic of ₹550 due before allocation and ₹250 after; the previous over-balance allocation attempt had no ledger effect.
+- **Current shop state:** Maggi stock is 12 packs. A physical count is in the timeline, but there is no stockout-observation event yet. The latest actions lookup has no approved mock growth action.
+- **Next Phase 5 work:** Browser walkthrough of the inventory distinction (observe stockout, verify stock remains 12, then confirm a physical count), followed by facts brief review and merchant-approved mock action. Phone-to-laptop access is still unverified.
+- **Gemini responsiveness:** Both the command interpreter and facts explainer now cap upstream requests at 8 seconds before deterministic fallback. Recent command calls timed out; a direct minimal Gemini request returned HTTP 503. The valid-key inference path remains unverified; no secret was printed or committed.
+
+### 2026-10-30 — Eight-second Gemini fallback verified
+
+- **Facts explainer:** `POST /insights/explain` returned HTTP 200 with `fallback_used=true`, 4 evidence IDs, and the bounded `counter_notice` action type in 8.6 seconds.
+- **Command NLP:** An unsupported synthetic balance phrasing returned HTTP 200 with `status=unavailable`, `provider_used=fallback`, and `fallback_used=true` in 8.3 seconds.
+- **Conclusion:** Browser-facing insights and command routes complete safely with the updated key present even while the upstream model stalls. The request latency is bounded near the 8-second timeout. Gemini-generated output remains unverified.
+- **Next:** In the browser, open Inventory, look up Maggi, record a stockout observation and verify stock remains 12; then enter and confirm a physical count of 10. After that, load the merchant brief and approve one mock action, verifying its “not published” label and scheduled outcome.
+
+### 2026-10-30 — Browser inventory acceptance check not passed yet
+
+- **Observed after user reported completion:** Maggi's current on-hand quantity is 23 packs; the latest timeline event is `STOCK_COUNT_RECORDED` with source utterance `Physical count: 23`. The timeline has no `STOCKOUT_OBSERVED` event.
+- **Result:** The intended stockout-then-count check (stock stays at 12 after observation, then becomes 10 after the entered count) is not verified. No data was changed by this audit.
+- **Next:** Repeat the stockout observation action, verify the quantity remains unchanged, then enter the intended physical count and confirm. Proceed to the growth brief/mock action after the inventory gate is clear.
+
+### 2026-10-30 — Follow-up inventory audit
+
+- **Read-only result:** Current Maggi on-hand quantity is 0 packs. Timeline now includes another `STOCK_COUNT_RECORDED` event with source utterance `Physical count: 0` (following the earlier count of 23 and seed count of 12).
+- **Stockout status:** No `STOCKOUT_OBSERVED` event exists yet. Entering a physical count of zero sets on-hand to zero; it does not record the separate stockout observation.
+- **No corrective write performed:** The audit did not change stock. Confirm the intended count before correcting it; for the demo distinction, record a stockout observation separately and verify that action itself leaves on-hand unchanged.
+
+### 2026-10-30 — User confirmed zero inventory count is intentional
+
+- The user confirmed the physical count of 0 packs for Maggi was intentional and reported the flow is working as expected.
+- No corrective inventory write was made. The browser count flow is accepted; the distinct stockout-observation action remains unverified in this run.
+
+### 2026-10-30 — Merchant brief audit and editable mock action
+
+- **Read-only brief check:** Five synthetic facts and their evidence IDs load. The facts-only explanation returned a deterministic fallback after the Gemini timeout: four evidence IDs and the bounded `counter_notice` action type. The latest-action endpoint is empty; no merchant approval was created by this audit.
+- **Merchant control improvement:** The browser action card now has an editable 240-character action field. Before approval, the merchant can change the suggested text; after approval, the card displays the exact saved text and the mock-only scheduled observation. Approval still requires the merchant to click the explicit button.
+- **Default counter notice:** The server-owned fallback draft is now customer-facing copy: “Ask us about this week's in-store offers. UPI accepted.” This is editable, not automatically sent or published.
+- **Checks:** Mobile TypeScript typecheck passed. The facts/explanation endpoint returned HTTP 200 with deterministic fallback and no mutation. No mock action has been approved yet.
+- **Next:** In the browser, open “Aaj kaisa raha?”, edit or keep the notice, and click “Approve & Track for 7 Days (Mock).” Then verify the card says nothing was published and the outcome is scheduled. Phone/LAN rehearsal remains after that.
+
+### 2026-10-30 — Merchant-approved growth action verified; clean browser runbook added
+
+- **Browser-backed result:** `GET /actions/latest?persona=kirana` returns `APPROVED_MOCK`, `mock_only=true`, action type `counter_notice`, exact saved text `Ask us about this week's in-store offers. UPI accepted.`, and `outcome_status=scheduled`. The seven-day observation window is recorded and the backend says the action was not published.
+- **Baseline:** The approval captured 209 synthetic transactions as its baseline count. The action comparison remains observational.
+- **Runbook:** Added `docs/BROWSER_DEMO_WALKTHROUGH.md` with fresh-database PowerShell commands, expected demo arithmetic, browser flow, and truthful limitations. It uses a timestamped temp DB path and does not delete the current preview data.
+- **Payment input:** Changed the mock payment amount from a fixed value to a positive rupee amount with up to two decimals. This allows the clean walkthrough to use ₹300 against the ₹550 due, while an already-modified demo can choose a smaller eligible amount.
+- **Next:** Final environment acceptance: verify start commands, physical phone/LAN connectivity, then run the complete sequence from a new synthetic seed. Stockout observation remains a separate optional browser check; current Maggi count of zero is intentional.
+
+### 2026-10-30 — Voice-ready merchant commands and detailed summaries
+
+- **Request:** Expand the project beyond the growth brief so the merchant can check customer dues and inventory by voice, add a customer such as Rajju from speech, report stockouts/count stock, and get a detailed explanation of payment and timeline activity.
+- **Command path:** Existing Sarvam transcript review and Send action now feed the same deterministic parser and Gemini assist as typed input. Added customer creation, latest recorded stock lookup, physical count, payment summary, and timeline summary intents. Voice is not permitted to bypass transcript review, exact entity resolution, previews, or explicit confirmation.
+- **Customer safety:** `add new customer Rajju Sharma` previews the exact spelling; confirming creates only a customer profile. It does not create debt. Existing exact names are not duplicated; ambiguous aliases require selection.
+- **Inventory behavior:** Stock lookup is read-only and clearly described as the latest recorded count, not a live sensor. Physical count requires a preview and confirmation; stockout observation remains a separate confirmed event and does not mutate quantity.
+- **Payment and activity summaries:** Added read-only `GET /events/summary`, aggregating ledger credit/repayment separately from synthetic payment events by status, unresolved successful events, inventory events, and recent payment/timeline details. All summary output identifies the complete recorded demo history as synthetic; “today” does not mean a live daily Paytm feed.
+- **Limitations:** Gemini remains intermittent (recent upstream requests returned HTTP 503/timeouts); deterministic common phrasing works without it. Voice spelling/number recognition is only as reliable as the transcript and must be reviewed. No Paytm production feed, MongoDB persistence, or live stock sensor is implied.
+- **Checks:** Mobile TypeScript typecheck passed; backend Python `compileall` passed. `GET /events/summary` returned HTTP 200 against the preserved demo database (17 recorded events, 1 mock payment event, 2 posted repayments, 0 open reviews); no records were changed by this read-only check. Browser/device acceptance for new voice intents is still pending.
+- **Files:** `backend/app/api/events.py`, `backend/app/domain/models.py`, new `backend/app/services/activity_summary.py`, `backend/app/services/command_nlp.py`, `mobile/src/api/ledgerClient.ts`, `mobile/src/features/home/HomeScreen.tsx`, `mobile/src/features/home/parseMerchantCommand.ts`, `mobile/src/features/timeline/TimelineScreen.tsx`, and this phase/runbook/contract documentation.

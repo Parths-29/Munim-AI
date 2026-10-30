@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 /**
  * Comprehensive Typed client for KiranaOS Backend API v0.5
  * Ref: docs/contracts/backend-api-v0.md
@@ -23,6 +25,34 @@ export interface HealthResponse {
 export async function fetchHealth(): Promise<HealthResponse> {
   const res = await fetch(`${API_BASE_URL}/health`);
   if (!res.ok) throw new Error(`Health check failed with HTTP ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Merchant command understanding (interpretation only; never writes)
+// ---------------------------------------------------------------------------
+export interface CommandInterpretResponse {
+  status: 'ready' | 'clarification' | 'unavailable';
+  intent: 'credit' | 'repayment' | 'balance' | 'customer_create' | 'stockout' | 'stock_check' | 'stock_count' | 'payment_summary' | 'timeline_summary' | null;
+  entity_text: string | null;
+  amount_text: string | null;
+  count_text: string | null;
+  confidence: number;
+  message: string | null;
+  provider_used: 'gemini' | 'fallback';
+  fallback_used: boolean;
+}
+
+export async function interpretMerchantCommand(
+  utterance: string,
+  sourceChannel: 'text' | 'voice' = 'text',
+): Promise<CommandInterpretResponse> {
+  const res = await fetch(`${API_BASE_URL}/commands/interpret`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ utterance, source_channel: sourceChannel }),
+  });
+  if (!res.ok) throw new Error(`Command interpretation failed with HTTP ${res.status}`);
   return res.json();
 }
 
@@ -282,6 +312,46 @@ export async function fetchEvents(limit: number = 50): Promise<TimelineEvent[]> 
   return res.json();
 }
 
+export interface ActivitySummaryResponse {
+  data_mode: 'synthetic' | 'merchant_entered' | 'provider_mock';
+  period_label: string;
+  recorded_event_count: number;
+  credit_entry_count: number;
+  credit_total_paise: number;
+  repayment_entry_count: number;
+  repayment_total_paise: number;
+  payment_event_count: number;
+  successful_payment_count: number;
+  successful_payment_total_paise: number;
+  pending_payment_count: number;
+  pending_payment_total_paise: number;
+  failed_payment_count: number;
+  failed_payment_total_paise: number;
+  reversed_payment_count: number;
+  reversed_payment_total_paise: number;
+  open_review_payment_count: number;
+  open_review_payment_total_paise: number;
+  stockout_observation_count: number;
+  physical_count_event_count: number;
+  recent_payments: {
+    event_id: string;
+    amount_paise: number;
+    payment_status: 'SUCCESS' | 'PENDING' | 'FAILED' | 'REVERSED';
+    resolution_status: 'ALLOCATED' | 'REVIEW' | 'UNMATCHED' | 'IGNORED';
+    reason: string | null;
+    occurred_at: string;
+  }[];
+  latest_events: TimelineEvent[];
+  summary_text: string;
+  caveats: string[];
+}
+
+export async function fetchActivitySummary(): Promise<ActivitySummaryResponse> {
+  const res = await fetch(`${API_BASE_URL}/events/summary`);
+  if (!res.ok) throw new Error(`Fetch activity summary failed with HTTP ${res.status}`);
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Business Insights Facts
 // ---------------------------------------------------------------------------
@@ -401,7 +471,17 @@ export async function allocatePaymentManually(
   });
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null);
-    throw new Error(errorBody?.detail ?? `Payment allocation failed with HTTP ${res.status}`);
+    const detail = errorBody?.detail;
+    if (detail && typeof detail === 'object' && detail.code === 'PAYMENT_EXCEEDS_OUTSTANDING_BALANCE') {
+      const paymentRupees = Number(detail.payment_paise) / 100;
+      const balanceRupees = Number(detail.balance_due_paise) / 100;
+      throw new Error(
+        `This ₹${paymentRupees.toFixed(2)} payment is greater than the customer's ₹${balanceRupees.toFixed(2)} outstanding due. No repayment was posted. Use a payment no larger than the verified due.`
+      );
+    }
+    throw new Error(
+      typeof detail === 'string' ? detail : `Payment allocation failed with HTTP ${res.status}`
+    );
   }
   return res.json();
 }
@@ -494,11 +574,29 @@ export interface SpeechTranscriptionResponse {
 
 export async function transcribeMerchantAudio(uri: string): Promise<SpeechTranscriptionResponse> {
   const form = new FormData();
-  form.append('file', {
-    uri,
-    name: 'merchant-voice.m4a',
-    type: 'audio/mp4',
-  } as unknown as Blob);
+  if (Platform.OS === 'web') {
+    // Expo Audio records WebM in browsers. Browser FormData needs a real Blob;
+    // React Native's { uri, name, type } file descriptor only works natively.
+    const audioResponse = await fetch(uri);
+    if (!audioResponse.ok) throw new Error('Could not read the browser recording. Please record again.');
+    const audioBlob = await audioResponse.blob();
+    const detectedType = audioBlob.type?.split(';', 1)[0].trim().toLowerCase() || '';
+    const normalizedType = detectedType === 'video/webm' ? 'audio/webm' : detectedType;
+    const browserAudioTypes = new Set(['audio/aac', 'audio/mp4', 'audio/m4a', 'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm', 'audio/x-m4a', 'audio/3gpp']);
+    const contentType = browserAudioTypes.has(normalizedType) ? normalizedType : 'audio/webm';
+    const extension = contentType.includes('webm') ? 'webm' : contentType.includes('wav') ? 'wav' : 'm4a';
+    // FormData uses the Blob's own type, not a separate header. Re-wrap it so
+    // codec suffixes such as "audio/webm;codecs=opus" do not leak into the
+    // multipart Content-Type and fail the backend allowlist.
+    const normalizedBlob = new Blob([audioBlob], { type: contentType });
+    form.append('file', normalizedBlob, `merchant-voice.${extension}`);
+  } else {
+    form.append('file', {
+      uri,
+      name: 'merchant-voice.m4a',
+      type: 'audio/mp4',
+    } as unknown as Blob);
+  }
   const res = await fetch(`${API_BASE_URL}/speech/transcribe`, {
     method: 'POST',
     body: form,
