@@ -4,7 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Query
 
-from app.domain.models import BriefExplanationResponse, BusinessFactsView
+from app.domain.models import BriefExplanationRequest, BriefExplanationResponse, BusinessFactsView
 from app.services.explainer import explain_business_facts
 from app.services.insights import get_business_facts
 
@@ -18,10 +18,9 @@ def business_facts_route(
     return get_business_facts(persona)
 
 
-@router.get("/explanation", response_model=BriefExplanationResponse)
 @router.post("/explain", response_model=BriefExplanationResponse)
 def business_explanation_route(
-    persona: Literal["kirana", "tea_stall", "medical_store"] = Query(default="kirana"),
+    request: BriefExplanationRequest,
 ) -> BriefExplanationResponse:
-    facts = get_business_facts(persona)
+    facts = get_business_facts(request.persona)
     return explain_business_facts(facts)

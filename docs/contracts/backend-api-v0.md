@@ -91,6 +91,10 @@ Returns recent event IDs, event types, related entity, source event/channel/utte
 
 Returns facts in the shape defined by `docs/contracts/facts.schema.json`. Supported personas are `kirana`, `tea_stall`, and `medical_store`. The API seeds a deterministic 90-day synthetic transaction fixture when its local database is empty. The current window is the latest 7 full fixture days and the comparison is the preceding 7 full days. Values are computed in Python from rows; no LLM computes metrics. Raw payer tokens are never included in the response. Collections are UPI-only, lapsed-payer counts are synthetic-token counts, and before/after differences are not causal claims.
 
+## Facts-only explanation (current hardening branch)
+
+`POST /insights/explain` accepts `{"persona":"kirana"}` (supported personas: `kirana`, `tea_stall`, `medical_store`) and returns an explanation, evidence IDs, a permitted action type, and backend-owned action copy. The backend may call Gemini server-side; missing credentials, upstream errors, or invalid model output use a deterministic fallback. The model does not write to the database or publish an action. On `codex/explainer-hardening`, this is the route used by the mobile brief. The hardening branch is not yet merged into `main`; see [`../BUILD_LOG.md`](../BUILD_LOG.md) for verification and merge status.
+
 ## Mocked payment intake and review
 
 `POST /payments/payer-mappings` accepts `payer_token`, `customer_id`, `confirmed`, and `idempotency_key`. It creates one merchant-scoped synthetic-token mapping only after confirmation; conflicting mappings return `409`.
@@ -101,4 +105,4 @@ An event is automatically allocated as a repayment only when its status is `SUCC
 
 ## Explicitly not implemented in v0.5
 
-Voice/LLM parsing, action publication, authentication, and production payment integration. Do not build mobile screens that imply these backend behaviors already exist.
+Voice/LLM command parsing, live action publication, authentication, and production payment integration. The facts-only explanation endpoint above is read-only and does not imply these behaviors exist.

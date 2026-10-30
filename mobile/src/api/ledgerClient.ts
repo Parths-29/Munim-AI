@@ -420,7 +420,12 @@ export async function fetchBriefExplanation(
   persona: Persona = 'kirana',
 ): Promise<BriefExplanationResponse> {
   const res = await fetch(
-    `${API_BASE_URL}/insights/explanation?persona=${encodeURIComponent(persona)}`,
+    `${API_BASE_URL}/insights/explain`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ persona }),
+    },
   );
   if (!res.ok) throw new Error(`Fetch brief explanation failed with HTTP ${res.status}`);
   return res.json();

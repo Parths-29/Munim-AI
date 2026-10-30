@@ -1,6 +1,8 @@
 # Continuous Team Workflow
 
-**Current working agreement:** Parth, Priyanshu, Rachit, Codex, and Antigravity can work in parallel on separate, reviewable tasks. Do not wait for five numbered phases to finish before integration. Keep `main` usable by pushing small changes and merging reviewed PRs as each task is ready.
+> **Updated working agreement (30 October 2026):** For the current continuation, the user has asked Codex to work sequentially as the sole coding agent. Do not delegate project work to Antigravity or other agents. Keep changes reviewable, push task branches, and use PRs for integration. `docs/BUILD_LOG.md` is the current handoff and milestone audit; read it before resuming.
+
+The parallel ownership and Antigravity coordination notes below describe the earlier team setup and are retained as historical context. They do not override the current single-agent instruction.
 
 ## Product decisions already made
 

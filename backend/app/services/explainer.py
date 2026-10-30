@@ -81,10 +81,8 @@ def generate_deterministic_fallback(
     if not explanation:
         explanation = "Business facts summary based on recorded transaction data."
 
-    proposed_action = (
-        "Place a counter QR notice reminding repeat customers that digital payments are accepted."
-    )
     action_type = "counter_notice"
+    proposed_action = _action_copy(action_type)
 
     return BriefExplanationResponse(
         explanation=explanation,
@@ -96,6 +94,13 @@ def generate_deterministic_fallback(
     )
 
 
+def _action_copy(action_type: str) -> str:
+    """Keep actions bounded and merchant-side; model prose never becomes an instruction."""
+    if action_type == "qr_offer_mock":
+        return "Draft a QR-linked offer for the merchant to review. Demo only; it is not published."
+    return "Draft a counter notice for the merchant to review. Demo only; it is not published."
+
+
 def _collect_allowed_numbers(facts_view: BusinessFactsView) -> set[float]:
     """Collect all valid numbers from facts (values, comparison values, counts)."""
     allowed = set()
@@ -105,7 +110,6 @@ def _collect_allowed_numbers(facts_view: BusinessFactsView) -> set[float]:
             return
         if isinstance(val, (int, float)):
             allowed.add(round(float(val), 2))
-            allowed.add(round(abs(float(val)), 2))
             # Also add integer representation if close
             if abs(round(float(val)) - float(val)) < 0.001:
                 allowed.add(float(round(val)))
@@ -114,7 +118,6 @@ def _collect_allowed_numbers(facts_view: BusinessFactsView) -> set[float]:
                 try:
                     num = float(m)
                     allowed.add(round(num, 2))
-                    allowed.add(round(abs(num), 2))
                 except ValueError:
                     pass
 
@@ -138,12 +141,11 @@ def validate_explanation(
     if not explanation or not isinstance(explanation, str):
         errors.append("Missing or invalid explanation field.")
 
-    proposed_action = output_data.get("proposed_action")
-    if not proposed_action or not isinstance(proposed_action, str):
-        errors.append("Missing or invalid proposed_action field.")
-
     action_type = output_data.get("action_type")
-    if action_type not in facts_view.allowed_actions:
+    if (
+        action_type not in {"counter_notice", "qr_offer_mock"}
+        or action_type not in facts_view.allowed_actions
+    ):
         errors.append(f"Invalid action_type: {action_type}. Allowed: {facts_view.allowed_actions}")
 
     evidence_ids = output_data.get("evidence_ids", [])
@@ -160,19 +162,24 @@ def validate_explanation(
         "weather", "rain", "holiday", "festival", "competitor", "construction",
         "traffic", "footfall", "roadblock", "power outage", "strike"
     ]
-    full_text = f"{explanation} {proposed_action}".lower()
+    # The model should not suggest direct outreach or use of customer identities.
+    prohibited_contact_words = ["whatsapp", "message customers", "contact customers", "call customers", "customer phone"]
+    full_text = explanation.lower() if isinstance(explanation, str) else ""
     for word in prohibited_cause_words:
         if word in full_text:
             errors.append(f"Prohibited invented cause detected: '{word}'.")
+    for word in prohibited_contact_words:
+        if word in full_text:
+            errors.append("Prohibited customer-contact suggestion detected.")
 
-    # Validate numbers in explanation and proposed_action
+    # Validate numbers in model-authored explanation text. Action copy is replaced
+    # with a server-owned template after validation, so it cannot smuggle a claim.
     allowed_numbers = _collect_allowed_numbers(facts_view)
-    found_numbers = NUMBER_REGEX.findall(f"{explanation} {proposed_action}")
+    found_numbers = NUMBER_REGEX.findall(explanation if isinstance(explanation, str) else "")
     for num_str in found_numbers:
         try:
             num = round(float(num_str), 2)
-            abs_num = abs(num)
-            if num not in allowed_numbers and abs_num not in allowed_numbers:
+            if num not in allowed_numbers:
                 errors.append(f"Unauthorized number {num_str} not found in provided facts.")
         except ValueError:
             pass
@@ -210,7 +217,8 @@ def explain_business_facts(facts_view: BusinessFactsView) -> BriefExplanationRes
         "2. NEVER invent causes (do not mention footfall, weather, holidays, competitors, or external events).\n"
         "3. NEVER propose contacting customers individually or inferring identities.\n"
         "4. Your proposed action must be bounded and chosen from allowed actions: 'counter_notice' or 'qr_offer_mock'.\n"
-        "5. Output valid JSON only with keys: 'explanation' (string, 2-3 sentences max), 'evidence_ids' (list of fact id strings), 'proposed_action' (string), 'action_type' ('counter_notice' or 'qr_offer_mock')."
+        "5. Choose an action_type only; the application writes the action copy from a fixed safe template. "
+        "6. Output valid JSON only with keys: 'explanation' (string, 2-3 sentences max), 'evidence_ids' (list of fact id strings), 'action_type' ('counter_notice' or 'qr_offer_mock')."
     )
 
     prompt = (
@@ -219,7 +227,7 @@ def explain_business_facts(facts_view: BusinessFactsView) -> BriefExplanationRes
         "Generate the concise, strictly facts-only explanation and one bounded action in the specified JSON format."
     )
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={api_key}"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
     payload = {
         "contents": [
             {
@@ -237,7 +245,10 @@ def explain_business_facts(facts_view: BusinessFactsView) -> BriefExplanationRes
     try:
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
-            url, data=data, headers={"Content-Type": "application/json"}, method="POST"
+            url,
+            data=data,
+            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+            method="POST",
         )
         with urllib.request.urlopen(req, timeout=30) as resp:
             resp_body = json.loads(resp.read().decode("utf-8"))
@@ -255,7 +266,7 @@ def explain_business_facts(facts_view: BusinessFactsView) -> BriefExplanationRes
             return BriefExplanationResponse(
                 explanation=parsed["explanation"],
                 evidence_ids=parsed.get("evidence_ids", []),
-                proposed_action=parsed["proposed_action"],
+                proposed_action=_action_copy(parsed["action_type"]),
                 action_type=parsed["action_type"],
                 fallback_used=False,
                 validation_errors=[],
@@ -265,6 +276,7 @@ def explain_business_facts(facts_view: BusinessFactsView) -> BriefExplanationRes
             return generate_deterministic_fallback(facts_view, validation_errors)
 
     except Exception as e:
-        logger.exception("Error calling Gemini API for brief explanation: %s", e)
-        return generate_deterministic_fallback(facts_view, [f"AI call failed: {str(e)}"])
+        # Avoid returning raw upstream error text, which can contain request details.
+        logger.warning("Gemini explanation unavailable (%s).", type(e).__name__)
+        return generate_deterministic_fallback(facts_view, [f"AI call failed ({type(e).__name__})."])
 
