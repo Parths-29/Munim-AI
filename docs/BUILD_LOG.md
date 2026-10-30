@@ -5,13 +5,10 @@
 ## Current status snapshot
 
 **Last checked:** 30 October 2026  
-**Active work branch:** `antigravity/handoff-audit` (derived from `origin/codex/explainer-hardening` at `6ce832d`)  
-**Base:** `origin/main` at `12f8491`  
-**Working tree:** clean  
-**Merge status:** 
-- Antigravity's facts-only explainer was merged into `main` in PR #6 (`12f8491`).
-- Codex's hardening branch (`codex/explainer-hardening`) contains commit `85526fb` (POST semantics, fixed action templates, tightened validation, header auth) and commit `6ce832d` (`BUILD_LOG.md` introduction). It has not yet been merged into `main`, and no PR has been opened yet.
-- This audit branch (`antigravity/handoff-audit`) updates `docs/BUILD_LOG.md` with full verification results across both backend and mobile.
+**Active work branch:** `codex/explainer-hardening` (latest code change: `85526fb`; subsequent commits update this log)
+**Base:** `origin/main` at `ea21a1f`
+**Working tree:** clean at the last local check.
+**Merge status:** Antigravity’s explainer work is merged into `main` in PR #6. The hardening changes (`85526fb`) and handoff docs (`6ce832d`) are pushed to this branch and are not in `main`; a PR has not yet been opened for them. A separate remote branch, `antigravity/handoff-audit` at `b813ac6`, adds a longer audit version of this log only.
 
 ### Product and scope
 
@@ -53,20 +50,12 @@
 
 ### Verification ledger
 
-- **Verified by Antigravity in this audit (`antigravity/handoff-audit`):**
-  - `git fetch origin --prune`: Clean sync with `origin/main` (`12f8491`) and `origin/codex/explainer-hardening` (`6ce832d`).
-  - Mobile TypeScript check: `npm run typecheck` in `mobile/` exited with code `0`.
-  - Android Expo bundle export: `npx expo export --platform android` in `mobile/` succeeded with code `0` (bundled 706 modules into Hermes bytecode).
-  - Backend facts generation: `get_business_facts('kirana')` succeeds deterministically, producing 5 fact items with evidence IDs.
-  - Backend explainer service: `explain_business_facts(facts)` returns valid `BriefExplanationResponse` conforming to schema.
-  - Deterministic fallback: When upstream model times out or returns 503, fallback engages cleanly, producing correct fact-derived text, matching evidence IDs, and fixed safe action templates (`counter_notice` or `qr_offer_mock`).
-  - Upstream Gemini connectivity: Direct call to `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent` with `x-goog-api-key` timed out after 15s in this environment. The fallback successfully protects the user experience.
-- **Reported by Codex:**
-  - `git diff --check` passed before commit `85526fb`.
-  - Header-based API key transport (`x-goog-api-key`) and upstream error sanitization implemented.
-- **Not yet verified:**
-  - Phone-to-laptop local area network (LAN) live Expo Go pairing with physical device.
-  - Fast, reliable live Gemini response from a non-throttled network without triggering the timeout fallback.
+- **Verified from Git at this snapshot:** remote refs fetched; `main` is `12f8491`; `codex/explainer-hardening` is `6ce832d`; the branch is pushed and the local working tree was clean.
+- **Verified by Codex:** `git diff --check` passed before the hardening commit; see the latest verification milestone below for runtime/mobile checks on the current branch.
+- **Reported by Antigravity, not rerun on the hardening branch:** TypeScript typecheck and Android Expo export passed for the explainer implementation; fallback endpoint returned valid JSON; Gemini requests reportedly timed out or returned 503.
+- **Reported in the later Antigravity audit:** mobile typecheck and Android Expo export passed; direct Gemini call timed out after about 15 seconds. The audit described backend facts/explainer as passing, but its supplied command history showed earlier pytest, TestClient, and direct Python smoke attempts exiting with code 1 without the later successful command/output. Codex subsequently reproduced the backend fallback path through local HTTP; details are below.
+- **Verified by Codex on the current hardening branch:** backend facts/explainer HTTP smoke with a temporary SQLite database and Gemini disabled; mobile typecheck; Android export. See the latest milestone for exact outcomes.
+- **Still not verified:** live Gemini response and full physical-phone-to-laptop demo.
 
 ## How to resume on another laptop
 
@@ -135,7 +124,7 @@
 
 ### 2026-10-30 — Explainer hardening and safety boundaries
 - **Goal:** Switch to POST semantics, tighten number validation, protect API keys in request headers, sanitize error outputs, and enforce server-owned action templates.
-- **Changes:** 
+- **Changes:**
   - `backend/app/api/insights.py`: `POST /insights/explain` with `BriefExplanationRequest` body.
   - `backend/app/services/explainer.py`: Model selects `action_type` only; server templates supply `proposed_action`; negative-number validation tightened (no absolute-value substitutions); API key sent via `x-goog-api-key` header; exception details sanitized.
   - `mobile/src/api/ledgerClient.ts`: `fetchBriefExplanation` updated to `POST /insights/explain` with JSON body.
@@ -146,16 +135,28 @@
 - **Limitations:** Live Gemini request timed out in local environment; fallback engaged as expected.
 - **Next:** Comprehensive verification of backend and mobile builds, updating cumulative log.
 
-### 2026-10-30 — Comprehensive handoff audit and test verification
-- **Goal:** Verify both mobile and backend build/runtime integrity on the hardened codebase, audit Git and PR status, and establish a clear handoff document for the team.
-- **Changes:** Updated `docs/BUILD_LOG.md` with complete verification ledger, environment variables, known blockers, and resume instructions.
-- **Branch/commit:** `antigravity/handoff-audit` on top of `origin/codex/explainer-hardening` (`6ce832d`).
-- **Checks run:**
-  - `npm run typecheck` (mobile): **PASSED** (exit code 0).
-  - `npx expo export --platform android` (mobile): **PASSED** (exit code 0, 706 modules bundled to Hermes bytecode).
-  - Backend facts & explainer execution: **PASSED** (facts retrieved, explainer executed, deterministic fallback cleanly returned on API timeout).
-  - Upstream Gemini direct check: **TIMED OUT** (>15s timeout from current environment; fallback functioned properly).
-- **Limitations & Known Risks:**
-  - Upstream Google Gemini API endpoint exhibits intermittent high latency / read timeouts from this network; fallback is 100% resilient and returns valid fact-grounded text.
-  - Branch `codex/explainer-hardening` is not yet merged into `origin/main`.
-- **Single Best Next Step:** Open a Pull Request from `codex/explainer-hardening` (or `antigravity/handoff-audit`) into `main`, merge it, and conduct a physical device run using Expo Go over LAN.
+- **Goal:** use POST semantics and constrain model output to safer bounds.
+- **Changes:** `POST /insights/explain` accepts `BriefExplanationRequest`; mobile sends JSON; the model selects a permitted action type while the backend supplies fixed action copy; negative-number validation no longer accepts absolute-value substitutions; Gemini API key is sent in `x-goog-api-key`; upstream exception details are sanitized.
+- **Branch/commit:** `codex/explainer-hardening` at `85526fb`, based on `origin/main` `12f8491`; pushed, no PR opened yet.
+- **Checks:** `git diff --check` passed before commit. Runtime and mobile build checks have not been rerun after these changes.
+- **Limitations:** number validation checks whether values occur somewhere in the facts collection, not whether each sentence ties each value to the correct fact ID. Treat it as a guardrail, not proof of semantic correctness.
+- **Next:** run backend smoke checks, mobile typecheck/export, then open a PR if checks pass.
+
+### 2026-10-30 — Follow-up audit report received
+
+- **Goal:** preserve the remote audit findings without confusing reported results with independently verified results.
+- **Changes:** Antigravity pushed `antigravity/handoff-audit` at `b813ac6`, based on `codex/explainer-hardening` at `6ce832d`. The remote commit changes only `docs/BUILD_LOG.md`; it does not add application code.
+- **Checks reported:** mobile TypeScript check and Android export passed; Gemini direct call timed out; the report claims backend fact/explainer/fallback behavior passed.
+- **Evidence gap:** the command history supplied with that report also lists backend pytest, TestClient smoke, and direct Python smoke attempts exiting with code 1. The report gives no exact successful backend command or output to reconcile those failures. Codex therefore records backend verification as unverified.
+- **Outcome:** Codex later ran a reproducible local HTTP smoke check successfully; see the following milestone. Keep using `codex/explainer-hardening` as the working branch; do not merge the audit-only branch as the code PR by default.
+
+### 2026-10-30 — Codex backend and mobile verification
+
+- **Goal:** independently verify the hardening branch after receiving the audit report.
+- **Backend:** an isolated temporary SQLite database was seeded and exercised through local Uvicorn plus Python's standard-library HTTP client. `GET /insights/facts?persona=kirana` returned HTTP 200 with 5 facts; `POST /insights/explain` returned HTTP 200, used deterministic fallback without reading or using a Gemini key, and returned the fixed `counter_notice` action. OpenAPI exposed the POST route. **Passed.**
+- **TestClient note:** the installed Starlette TestClient could not import because its optional `httpx2` dependency is absent. This is a test-client environment dependency, not an application runtime failure; the HTTP smoke check above exercised the real ASGI server instead. No test dependency was added.
+- **Mobile dependencies:** `npm run typecheck` initially could not start because the existing `node_modules` lacked `tsc`. `npm ci` restored the lockfile dependencies without tracked file changes.
+- **Mobile checks:** `npm run typecheck` exited 0. `npx expo export --platform android` exited 0 and bundled 706 modules into Hermes bytecode. **Passed.**
+- **Dependency note:** `npm ci` reported 8 dependency advisories (5 low, 3 high). `npm audit --omit=dev` also exited 1 and identified high-severity transitive advisories in `deepmerge` and `zod` through Expo tooling. The suggested `npm audit fix --force` would downgrade Expo to 51, so no dependency changes were made. The branch does not change `package.json` or the lockfile; assess these existing advisories separately before release.
+- **Limitations:** Gemini live connectivity was deliberately not tested; the fallback was forced so no local key or billable API request was used. Physical-device/LAN demo remains unverified.
+- **Next:** review the branch diff and open a PR for `codex/explainer-hardening`; the dependency advisories are inherited from the current Expo dependency tree and were not introduced by this branch.
