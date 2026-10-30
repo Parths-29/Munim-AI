@@ -44,8 +44,11 @@ import {
   Product,
   fetchInsightFacts,
   fetchBriefExplanation,
+  approveMockAction,
+  fetchLatestMockAction,
   FactsResponse,
   BriefExplanationResponse,
+  MockActionResponse,
 } from '@/api/ledgerClient';
 import { MerchantCommandIntent, parseMerchantCommand } from '@/features/home/parseMerchantCommand';
 import PaymentReviewScreen from '@/features/paymentReview/PaymentReviewScreen';
@@ -114,19 +117,22 @@ export default function HomeScreen() {
   // "Aaj kaisa raha?" end-to-end slice state
   const [insightsBrief, setInsightsBrief] = useState<FactsResponse | null>(null);
   const [aiExplanation, setAiExplanation] = useState<BriefExplanationResponse | null>(null);
-  const [mockOfferApproved, setMockOfferApproved] = useState(false);
+  const [mockAction, setMockAction] = useState<MockActionResponse | null>(null);
+  const approvalKeyRef = useRef<string | null>(null);
 
   // Trigger "Aaj kaisa raha?" insight slice + AI explanation
   const handleLoadInsightsBrief = useCallback(async () => {
     setLoading(true);
     try {
-      const [factsData, explanationData] = await Promise.all([
+      const [factsData, explanationData, latestAction] = await Promise.all([
         fetchInsightFacts('kirana'),
         fetchBriefExplanation('kirana').catch(() => null),
+        fetchLatestMockAction('kirana').catch(() => null),
       ]);
       setInsightsBrief(factsData);
       setAiExplanation(explanationData);
-      setMockOfferApproved(false);
+      setMockAction(latestAction);
+      approvalKeyRef.current = null;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       Alert.alert('Could Not Load Business Brief', `${message}\nEnsure backend is running at ${process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000'}`);
@@ -134,6 +140,27 @@ export default function HomeScreen() {
       setLoading(false);
     }
   }, []);
+
+  const handleApproveMockAction = async () => {
+    if (loading) return;
+    if (!approvalKeyRef.current) approvalKeyRef.current = `mock_action_${Date.now()}`;
+    setLoading(true);
+    try {
+      const approved = await approveMockAction({
+        persona: 'kirana',
+        action_type: aiExplanation?.action_type ?? 'counter_notice',
+        action_text: aiExplanation?.proposed_action ?? 'Optional shop-side experiment. Choose the item and offer yourself; UPI trends do not identify slow-moving products.',
+        confirmed: true,
+        idempotency_key: approvalKeyRef.current,
+      });
+      setMockAction(approved);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      Alert.alert('Could Not Record Mock Approval', message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Quick Action: Resolve / Check Balance
   const handleCheckRajuBalance = async () => {
@@ -965,21 +992,41 @@ export default function HomeScreen() {
                     </View>
                   )}
 
-                  {mockOfferApproved ? (
+                  {mockAction ? (
                     <View style={styles.approvedBanner}>
                       <Ionicons name="checkmark-done-circle" size={18} color="#155724" style={{ marginRight: 6 }} />
                       <Text style={styles.approvedBannerText}>
-                        Approved by Merchant (Mock only — NOT published to live customers).
+                        Saved as merchant-approved (mock only). Nothing was published or sent.
                       </Text>
                     </View>
                   ) : (
                     <TouchableOpacity
-                      style={styles.approveBtn}
-                      onPress={() => setMockOfferApproved(true)}
+                      style={[styles.approveBtn, loading && { opacity: 0.6 }]}
+                      onPress={handleApproveMockAction}
+                      disabled={loading}
                     >
-                      <Ionicons name="hand-right-outline" size={16} color="#ffffff" style={{ marginRight: 6 }} />
-                      <Text style={styles.approveBtnText}>Approve Mocked Counter Notice</Text>
+                      {loading ? <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 6 }} /> :
+                        <Ionicons name="hand-right-outline" size={16} color="#ffffff" style={{ marginRight: 6 }} />}
+                      <Text style={styles.approveBtnText}>Approve & Track for 7 Days (Mock)</Text>
                     </TouchableOpacity>
+                  )}
+                  {mockAction && (
+                    <View style={styles.outcomeCard}>
+                      <Text style={styles.outcomeTitle}>Outcome check · {mockAction.outcome_status === 'scheduled' ? 'Scheduled' : mockAction.outcome_status === 'available' ? 'Observed' : 'No data'}</Text>
+                      <Text style={styles.outcomeText}>{mockAction.outcome_note}</Text>
+                      <Text style={styles.outcomeMeta}>
+                        Baseline: {formatPeriodDate(mockAction.baseline_start, insightsBrief.period.timezone)}–{formatPeriodDate(mockAction.baseline_end, insightsBrief.period.timezone, true)} · {formatRupees(mockAction.baseline_collections_paise)} / {mockAction.baseline_transaction_count} payments
+                      </Text>
+                      <Text style={styles.outcomeMeta}>
+                        Check window: {new Date(mockAction.measurement_start).toLocaleDateString('en-IN')}–{new Date(mockAction.measurement_end).toLocaleDateString('en-IN')}
+                      </Text>
+                      {mockAction.outcome_status === 'available' && mockAction.outcome_collections_paise !== null && (
+                        <Text style={styles.outcomeMeta}>
+                          Observed: {formatRupees(mockAction.outcome_collections_paise)} / {mockAction.outcome_transaction_count ?? 0} payments · change vs baseline {formatRupees(mockAction.collections_change_paise ?? 0)}
+                        </Text>
+                      )}
+                      <Text style={styles.outcomeDisclaimer}>UPI only · a difference does not prove the action caused it · mock action was not published</Text>
+                    </View>
                   )}
                 </View>
               </View>
@@ -1294,6 +1341,18 @@ const styles = StyleSheet.create({
     borderColor: '#c3e6cb',
   },
   approvedBannerText: { fontSize: 11, fontWeight: '700', color: '#155724', flex: 1 },
+  outcomeCard: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 6,
+    backgroundColor: '#f1f6f8',
+    borderWidth: 1,
+    borderColor: '#c8dce3',
+  },
+  outcomeTitle: { fontSize: 12, fontWeight: '800', color: '#0f3460', marginBottom: 4 },
+  outcomeText: { fontSize: 11, color: '#34495e', lineHeight: 16, marginBottom: 5 },
+  outcomeMeta: { fontSize: 10, color: '#495057', marginTop: 3 },
+  outcomeDisclaimer: { fontSize: 10, color: '#856404', fontWeight: '600', marginTop: 6 },
 
   // Customer Card
   customerCard: {

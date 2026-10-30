@@ -5,10 +5,10 @@
 ## Current status snapshot
 
 **Last checked:** 30 October 2026  
-**Active work branch:** `codex/merchant-command-flow`, started from `origin/main` at `5577f98`
-**Base:** `origin/main` at `5577f98`
+**Active work branch:** `codex/mock-action-outcomes`, started from `origin/main` at `318863e`
+**Base:** `origin/main` at `318863e` (includes merged PR #10)
 **Working tree:** product changes are in progress on this branch.
-**Merge status:** explainer hardening and the follow-up build-log updates are merged into `main` through PRs #7, #8, and #9. The current branch adds the text-command workflow described in the latest milestone.
+**Merge status:** explainer hardening and confirmed text commands are merged into `main` through PRs #7–#10. This branch adds persisted merchant mock-action approvals and honest outcome-window tracking.
 
 ### Product and scope
 
@@ -31,12 +31,13 @@
     - `GET /products/resolve`, `POST /products`, `GET /inventory/products/{id}/stock`, `POST /inventory/stockout-observations`, `POST /inventory/counts` — stock balance, stockout observations, and physical counts.
     - `GET /events` — activity timeline of recent business events.
     - `GET /insights/facts` — deterministic, evidence-backed synthetic UPI facts (payment collections, collection change %, median ticket, failure rate, lapsed repeat payers).
-    - `POST /insights/explain` — server-side facts-only AI explanation with strict number validation and deterministic fallback (on `codex/explainer-hardening` and `antigravity/handoff-audit`).
+    - `POST /insights/explain` — server-side facts-only AI explanation with strict number validation and deterministic fallback.
+    - `POST /actions/mock`, `GET /actions/latest` — append-only merchant-approved mock action, baseline snapshot, and scheduled/available/insufficient-data outcome state.
     - `POST /payments/intake`, `GET /payments/review`, `POST /payments/{id}/allocate`, `POST /payments/mappings` — synthetic payment intake, review queue for unmatched payments, manual allocation with merchant confirmation, and payer token mappings.
 - **Mobile (`mobile/`):**
   - Expo SDK 58, React Native 0.88, and TypeScript app under `mobile/`.
   - Tabbed interface: Copilot, Pay Review, Inventory, Timeline, Insights.
-  - "Aaj kaisa raha?" brief: queries `GET /insights/facts` and `POST /insights/explain`, displaying evidence chips, caveats, comparison periods, and merchant-controlled mock action approval.
+  - "Aaj kaisa raha?" brief: queries facts/explanation and restores merchant-approved mock actions with a visible baseline and observation window.
   - Copilot text box: limited deterministic parser for credit, repayment, balance, and stockout commands, with exact entity resolution and confirmation previews.
   - Payer review flow: displays unmatched synthetic payments and allows merchant-confirmed allocation to known customers.
   - Inventory flow: stock lookup, stockout observation recording, physical inventory count reconciliation.
@@ -51,7 +52,7 @@
 
 ### Verification ledger
 
-- **Verified from Git at this snapshot:** remote refs fetched; `main` is `5577f98`; `codex/merchant-command-flow` starts at that commit.
+- **Verified from Git at this snapshot:** remote refs fetched; `main` is `318863e` and includes PR #10; `codex/mock-action-outcomes` starts at that commit.
 - **Verified by Codex:** `git diff --check` passed before the hardening commit; see the latest verification milestone below for runtime/mobile checks on the current branch.
 - **Reported by Antigravity, not rerun on the hardening branch:** TypeScript typecheck and Android Expo export passed for the explainer implementation; fallback endpoint returned valid JSON; Gemini requests reportedly timed out or returned 503.
 - **Reported in the later Antigravity audit:** mobile typecheck and Android Expo export passed; direct Gemini call timed out after about 15 seconds. The audit described backend facts/explainer as passing, but its supplied command history showed earlier pytest, TestClient, and direct Python smoke attempts exiting with code 1 without the later successful command/output. Codex subsequently reproduced the backend fallback path through local HTTP; details are below.
@@ -166,3 +167,13 @@
 - **Checks:** parser cases passed for credit, repayment, balance, stockout, mixed-action clarification, and excess decimal places. A local HTTP smoke with temporary SQLite confirmed the balance went from 50000 paise to 55000 after credit and 25000 after repayment; stockout was recorded while on-hand stayed at 12. `npm run typecheck` passed. `npx expo export --platform android` passed and bundled 707 modules.
 - **Limitations:** parser supports a narrow set of Hindi/Hinglish/English phrases and does not support voice or arbitrary natural language. Physical-phone UX remains unverified.
 - **Next:** rehearse the text commands on the demo phone with a seeded synthetic backend and tune the flow from that run.
+
+### 2026-10-30 — Persisted merchant approval and outcome tracking
+
+- **Goal:** Complete the trustworthy action loop after the merchant reviews a suggestion.
+- **Changes:** Added append-only `mock_actions` storage; merchant-confirmed, idempotent `POST /actions/mock`; `GET /actions/latest`; baseline snapshot; scheduled seven-day outcome window; factual outcome status that stays pending until post-approval rows exist. The mobile brief now saves and restores approval and shows baseline/window/status.
+- **Branch/base:** `codex/mock-action-outcomes`, based on `origin/main` at `318863e` (PR #10 merged).
+- **Data truth:** Current synthetic fixture ends on 2026-10-29 and has no post-approval rows. The demo therefore shows a scheduled outcome check; it does not fabricate a lift. If a completed window has no rows, status becomes `insufficient_data`. Any available comparison is observational and does not attribute a change to the mock action.
+- **Checks:** `python -m compileall -q app` passed. An isolated SQLite service smoke passed for approval persistence, idempotency replay, latest-action restore, unconfirmed rejection, and mismatched-key rejection. `npm run typecheck` passed. `npx expo export --platform android` passed (707 modules; Hermes bundle exported). `git diff --check` passed.
+- **Limitations:** No live offer publishing, live Paytm feed, or production authentication. The post-approval measurement cannot complete on the current fixed historical fixture.
+- **Next:** Verify API idempotency/confirmation and mobile build, then move to a user-facing voice input slice or physical-device demo.
