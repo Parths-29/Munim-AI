@@ -30,6 +30,7 @@ export default function PaymentReviewScreen() {
   const [confirmed, setConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [mockPaymentAmount, setMockPaymentAmount] = useState('200');
 
   const loadReviewQueue = useCallback(async () => {
     setLoading(true);
@@ -46,20 +47,26 @@ export default function PaymentReviewScreen() {
   }, []);
 
   const handleCreateDemoPayment = async () => {
+    const amountText = mockPaymentAmount.trim();
+    if (!/^\d{1,8}(?:\.\d{1,2})?$/.test(amountText) || Number(amountText) <= 0) {
+      setError('Enter a positive payment amount with up to two decimal places.');
+      return;
+    }
+    const amountPaise = Math.round(Number(amountText) * 100);
     setLoading(true);
     setError(null);
     try {
       const now = Date.now();
       await intakeMockPayment({
         event_id: `pay_synth_demo_${now}`,
-        amount_paise: 20000,
+        amount_paise: amountPaise,
         status: 'SUCCESS',
         occurred_at: new Date().toISOString(),
         idempotency_key: `cmd_mock_payment_${now}`,
         payer_token: null,
         source: 'provider_mock',
       });
-      setActionMessage('Synthetic ₹200 payment added to review. This is demo data, not a real UPI payment.');
+      setActionMessage(`Synthetic ₹${(amountPaise / 100).toFixed(2)} payment added to review. This is demo data, not a real UPI payment.`);
       await loadReviewQueue();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -141,10 +148,24 @@ export default function PaymentReviewScreen() {
         </Text>
       </View>
 
-      <TouchableOpacity style={styles.refreshBtn} onPress={handleCreateDemoPayment} disabled={loading}>
-        <Ionicons name="flask-outline" size={16} color="#0f3460" />
-        <Text style={styles.refreshText}>Add synthetic ₹200 payment</Text>
-      </TouchableOpacity>
+      <View style={styles.mockPaymentForm}>
+        <Text style={styles.mockPaymentLabel}>Synthetic payment amount (₹)</Text>
+        <TextInput
+          style={styles.mockPaymentInput}
+          value={mockPaymentAmount}
+          onChangeText={setMockPaymentAmount}
+          keyboardType="decimal-pad"
+          maxLength={11}
+          accessibilityLabel="Synthetic mock payment amount in rupees"
+        />
+        <Text style={styles.mockPaymentHint}>
+          For allocation, the payment must not exceed the customer's current outstanding due.
+        </Text>
+        <TouchableOpacity style={styles.refreshBtn} onPress={handleCreateDemoPayment} disabled={loading}>
+          <Ionicons name="flask-outline" size={16} color="#0f3460" />
+          <Text style={styles.refreshText}>Add synthetic ₹{Number(mockPaymentAmount || 0).toFixed(2)} payment</Text>
+        </TouchableOpacity>
+      </View>
 
       {actionMessage && (
         <View style={styles.successBanner}>
@@ -291,6 +312,10 @@ const styles = StyleSheet.create({
     borderColor: '#c3e6cb',
   },
   successText: { color: '#155724', fontSize: 13, fontWeight: '600' },
+  mockPaymentForm: { backgroundColor: '#ffffff', borderRadius: 8, padding: 12, marginVertical: 8 },
+  mockPaymentLabel: { fontSize: 12, fontWeight: '700', color: '#495057', marginBottom: 5 },
+  mockPaymentInput: { borderWidth: 1, borderColor: '#adb5bd', borderRadius: 6, padding: 9, color: '#212529', fontSize: 14 },
+  mockPaymentHint: { color: '#6c757d', fontSize: 11, lineHeight: 16, marginTop: 5, marginBottom: 8 },
   errorBanner: {
     backgroundColor: '#f8d7da',
     padding: 10,

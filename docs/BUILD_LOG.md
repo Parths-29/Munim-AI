@@ -326,3 +326,11 @@
 - **Default counter notice:** The server-owned fallback draft is now customer-facing copy: “Ask us about this week's in-store offers. UPI accepted.” This is editable, not automatically sent or published.
 - **Checks:** Mobile TypeScript typecheck passed. The facts/explanation endpoint returned HTTP 200 with deterministic fallback and no mutation. No mock action has been approved yet.
 - **Next:** In the browser, open “Aaj kaisa raha?”, edit or keep the notice, and click “Approve & Track for 7 Days (Mock).” Then verify the card says nothing was published and the outcome is scheduled. Phone/LAN rehearsal remains after that.
+
+### 2026-10-30 — Merchant-approved growth action verified; clean browser runbook added
+
+- **Browser-backed result:** `GET /actions/latest?persona=kirana` returns `APPROVED_MOCK`, `mock_only=true`, action type `counter_notice`, exact saved text `Ask us about this week's in-store offers. UPI accepted.`, and `outcome_status=scheduled`. The seven-day observation window is recorded and the backend says the action was not published.
+- **Baseline:** The approval captured 209 synthetic transactions as its baseline count. The action comparison remains observational.
+- **Runbook:** Added `docs/BROWSER_DEMO_WALKTHROUGH.md` with fresh-database PowerShell commands, expected demo arithmetic, browser flow, and truthful limitations. It uses a timestamped temp DB path and does not delete the current preview data.
+- **Payment input:** Changed the mock payment amount from a fixed value to a positive rupee amount with up to two decimals. This allows the clean walkthrough to use ₹300 against the ₹550 due, while an already-modified demo can choose a smaller eligible amount.
+- **Next:** Final environment acceptance: verify start commands, physical phone/LAN connectivity, then run the complete sequence from a new synthetic seed. Stockout observation remains a separate optional browser check; current Maggi count of zero is intentional.

@@ -22,7 +22,7 @@
 
 2. **Payment Review (`PaymentReviewScreen`):**
    - Lists unmatched or review-required successful mock payments (`GET /payments/review`).
-   - Can add a clearly labelled synthetic ₹200 payment to populate the review queue (`POST /payments/intake`).
+   - Can add a clearly labelled synthetic payment using an editable rupee amount to populate the review queue (`POST /payments/intake`).
    - Explicit synthetic mock disclaimer banner.
    - Merchant-confirmed manual allocation to a verified customer (`POST /payments/{event_id}/allocate`); payments above the current due are rejected with a readable message and do not create ledger entries.
 
