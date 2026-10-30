@@ -4,13 +4,14 @@ This is the current phase tracker for the hackathon prototype. Keep the Git work
 
 ## Phase 1 — Merchant command and ledger
 
-**Status: Core text flow implemented; one voice-originated write was observed, but Hindi number transcription remains inconsistent and is deferred.**
+**Status: Core text flow implemented; browser command NLP assist added with deterministic fallback. Voice capture/transcription tuning remains deferred.**
 
 - Text and Sarvam voice input enter the bounded deterministic command parser.
+- If the parser cannot classify a command, the browser may ask Gemini to return exact quoted entity/amount spans using synthetic English/Hinglish examples; the app validates those spans and re-runs its deterministic parser before preview. This is prompt guidance, not model training, and Gemini currently falls back because the configured key returns HTTP 401.
 - Customer/product aliases are resolved exactly; ambiguity or missing details stops for clarification.
 - Credit, repayment, and stockout writes show a preview, require merchant confirmation, and use idempotency keys.
 - Balances are derived from append-only ledger entries; repayments cannot exceed outstanding balance.
-- A read-only voice request transcribed, resolved the exact `Raju bhai` alias, and fetched the balance. A later voice-originated ₹10 credit was also recorded. Because spoken number recognition is inconsistent, treat voice as optional and use typed commands for reliable financial entry; do not keep expanding voice scope now.
+- A read-only voice request transcribed, resolved the exact `Raju bhai` alias, and fetched the balance. A later voice-originated ₹10 credit was also recorded. Because spoken number recognition is inconsistent, treat voice as optional and use typed commands for reliable financial entry; do not keep expanding voice capture/transcription now. A transcript may use the same command NLP assist as typed browser input.
 
 **Exit gate:** Typed commands support the reliable financial path with preview and confirmation. Basic voice plumbing and one voice write were observed, but recognition fidelity is not a Phase 5 blocker; typed input remains the fallback.
 

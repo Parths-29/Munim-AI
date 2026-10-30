@@ -29,6 +29,33 @@ export async function fetchHealth(): Promise<HealthResponse> {
 }
 
 // ---------------------------------------------------------------------------
+// Merchant command understanding (interpretation only; never writes)
+// ---------------------------------------------------------------------------
+export interface CommandInterpretResponse {
+  status: 'ready' | 'clarification' | 'unavailable';
+  intent: 'credit' | 'repayment' | 'balance' | 'stockout' | null;
+  entity_text: string | null;
+  amount_text: string | null;
+  confidence: number;
+  message: string | null;
+  provider_used: 'gemini' | 'fallback';
+  fallback_used: boolean;
+}
+
+export async function interpretMerchantCommand(
+  utterance: string,
+  sourceChannel: 'text' | 'voice' = 'text',
+): Promise<CommandInterpretResponse> {
+  const res = await fetch(`${API_BASE_URL}/commands/interpret`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ utterance, source_channel: sourceChannel }),
+  });
+  if (!res.ok) throw new Error(`Command interpretation failed with HTTP ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
 // Customers
 // ---------------------------------------------------------------------------
 export interface Customer {

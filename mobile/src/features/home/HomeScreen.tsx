@@ -49,6 +49,7 @@ import {
   approveMockAction,
   fetchLatestMockAction,
   transcribeMerchantAudio,
+  interpretMerchantCommand,
   FactsResponse,
   BriefExplanationResponse,
   MockActionResponse,
@@ -348,9 +349,48 @@ export default function HomeScreen() {
   };
 
   const handleRunMerchantCommand = async (utterance: string, sourceChannel: 'text' | 'voice' = 'text') => {
-    const parsed = parseMerchantCommand(utterance);
+    let parsed = parseMerchantCommand(utterance);
     setPendingCommand(null);
     setCommandFeedback(null);
+
+    let aiAssisted = false;
+    if (parsed.status === 'unsupported') {
+      if (commandBusyRef.current) return;
+      commandBusyRef.current = true;
+      setLoading(true);
+      try {
+        const interpretation = await interpretMerchantCommand(utterance, sourceChannel);
+        if (interpretation.status === 'ready' && interpretation.intent && interpretation.entity_text) {
+          // Re-parse a canonical command with the existing deterministic parser.
+          // This keeps currency conversion and all confirmation rules in one path.
+          const actionText = interpretation.intent === 'credit'
+            ? 'udhaar'
+            : interpretation.intent === 'repayment'
+              ? 'jama'
+              : interpretation.intent === 'balance'
+                ? 'balance'
+                : 'khatam';
+          const canonical = `${interpretation.entity_text} ${interpretation.amount_text ?? ''} ${actionText}`;
+          const candidate = parseMerchantCommand(canonical);
+          if (candidate.status === 'ready' && candidate.intent === interpretation.intent) {
+            parsed = candidate;
+            aiAssisted = true;
+          } else {
+            parsed = {
+              status: 'clarification',
+              message: 'AI understood the request, but the amount or action did not pass local validation. Please rephrase it with one explicit amount.',
+            };
+          }
+        } else if (interpretation.status === 'clarification' || interpretation.status === 'unavailable') {
+          parsed = {
+            status: 'clarification',
+            message: interpretation.message ?? 'Please use a supported command format or clarify the request.',
+          };
+        }
+      } catch {
+        // Preserve the existing deterministic parser behavior when the NLP service is offline.
+      }
+    }
 
     if (parsed.status !== 'ready') {
       setCommandFeedback({
@@ -358,13 +398,18 @@ export default function HomeScreen() {
         title: parsed.status === 'unsupported' ? 'Command Not Supported Yet' : 'Please Clarify',
         message: parsed.message,
       });
+      if (commandBusyRef.current) {
+        commandBusyRef.current = false;
+        setLoading(false);
+      }
       return;
     }
 
-    if (commandBusyRef.current) return;
-    commandBusyRef.current = true;
+    if (!commandBusyRef.current) {
+      commandBusyRef.current = true;
+      setLoading(true);
+    }
     const commandId = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    setLoading(true);
     try {
       if (parsed.intent === 'stockout') {
         const productResolution = await resolveProduct(parsed.productQuery);
@@ -491,7 +536,9 @@ export default function HomeScreen() {
       setCommandFeedback({
         tone: 'info',
         title: 'Review Before Recording',
-        message: 'This is a text-parser draft. Check the customer and amount; the ledger will not change until you confirm.',
+        message: aiAssisted
+          ? 'AI-assisted draft. Check the exact customer and amount; the ledger will not change until you confirm.'
+          : 'This is a text-parser draft. Check the customer and amount; the ledger will not change until you confirm.',
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

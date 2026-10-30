@@ -1,10 +1,18 @@
-# Backend API contract v0.7
+# Backend API contract v0.8
 
 This describes the synthetic single-shop backend slice on the current task branch. It supplements the AI proposal schemas; it is not a Paytm API contract.
 
 Base URL for local development: `http://127.0.0.1:8000`. Money is integer paise. The demo shop is fixed to `shop_synth_01`; there is no authentication or multi-shop isolation in this prototype.
 
 Expo Web development origins default to `http://localhost:8081` and `http://127.0.0.1:8081`. Set backend-only `MUNIM_CORS_ORIGINS` to a comma-separated allowlist if the web dev server uses a different origin; do not use a wildcard in a deployed environment.
+
+## `POST /commands/interpret`
+
+Optional read-only NLP assist for a typed command or an already-created speech transcript. The client calls it only when its deterministic parser cannot classify the request. It returns a structured draft (`intent`, exact `entity_text`, exact `amount_text`, and confidence) or asks for clarification. It never resolves IDs or writes to the ledger/inventory. The client re-parses the returned spans locally, then uses the same exact-entity lookup, preview, and explicit confirmation flow as other commands. If Gemini is missing or unavailable, the route returns a controlled fallback. `GEMINI_MODEL` can override the default `gemini-3.8-flash` model ID.
+
+Request: `{ "utterance": "what does Raju owe?", "source_channel": "text" }`. A successful interpretation returns `status: "ready"`, `intent: "balance"`, `entity_text: "Raju"`, `amount_text: null`, and a confidence score. For credit/repayment, `amount_text` must quote an explicit rupee amount from the utterance. A fallback returns `status: "unavailable"` and `provider_used: "fallback"`.
+
+The prompt uses a small set of synthetic Hinglish/English command examples stored in `backend/app/services/command_nlp.py`. These are few-shot examples only; they do not train or fine-tune Gemini. No ledger rows, transaction history, customer IDs, or product IDs are sent to Gemini. When enabled, the submitted utterance itself is sent to Google's Gemini API, so users should avoid including unrelated sensitive details.
 
 ## `POST /speech/transcribe`
 

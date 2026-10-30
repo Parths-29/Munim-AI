@@ -189,6 +189,22 @@ class BriefExplanationResponse(StrictModel):
     validation_errors: list[str] = Field(default_factory=list)
 
 
+class CommandInterpretRequest(StrictModel):
+    utterance: str = Field(min_length=1, max_length=240)
+    source_channel: Literal["text", "voice"] = "text"
+
+
+class CommandInterpretResponse(StrictModel):
+    status: Literal["ready", "clarification", "unavailable"]
+    intent: Literal["credit", "repayment", "balance", "stockout"] | None = None
+    entity_text: str | None = None
+    amount_text: str | None = None
+    confidence: float = Field(ge=0, le=1)
+    message: str | None = None
+    provider_used: Literal["gemini", "fallback"]
+    fallback_used: bool
+
+
 class MockActionCreate(StrictModel):
     persona: Literal["kirana", "tea_stall", "medical_store"] = "kirana"
     action_type: Literal["counter_notice", "qr_offer_mock"]
