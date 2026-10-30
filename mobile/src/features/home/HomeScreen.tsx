@@ -42,6 +42,8 @@ import {
   resolveProduct,
   fetchProductStock,
   recordStockoutObservation,
+  recordPhysicalCount,
+  fetchActivitySummary,
   Customer,
   Product,
   fetchInsightFacts,
@@ -53,6 +55,7 @@ import {
   FactsResponse,
   BriefExplanationResponse,
   MockActionResponse,
+  ActivitySummaryResponse,
 } from '@/api/ledgerClient';
 import { MerchantCommandIntent, parseMerchantCommand } from '@/features/home/parseMerchantCommand';
 import PaymentReviewScreen from '@/features/paymentReview/PaymentReviewScreen';
@@ -83,6 +86,7 @@ interface PendingCommand {
   currentBalancePaise?: number;
   currentStockQuantity?: number;
   stockUnit?: string;
+  countedQuantity?: number;
   sourceUtterance?: string;
   createCustomerOnConfirm: boolean;
 }
@@ -99,6 +103,12 @@ function formatRupees(amountPaise: number): string {
 
 const EXAMPLE_PROMPTS = [
   'Aaj kaisa raha?',
+  'Raju bhai ka balance batao',
+  'Add new customer Rajju Sharma',
+  'How many Maggi packs are left?',
+  'Set Maggi stock count to 10 packs',
+  'Summarize today’s payments',
+  'What happened in the shop today?',
   'Raju bhai ka ₹50 udhaar likh do',
   'Raju bhai ka ₹300 jamma kar lo',
   'Raju bhai ka balance batao',
@@ -371,17 +381,27 @@ export default function HomeScreen() {
       setLoading(true);
       try {
         const interpretation = await interpretMerchantCommand(utterance, sourceChannel);
-        if (interpretation.status === 'ready' && interpretation.intent && interpretation.entity_text) {
+        if (interpretation.status === 'ready' && interpretation.intent) {
           // Re-parse a canonical command with the existing deterministic parser.
           // This keeps currency conversion and all confirmation rules in one path.
-          const actionText = interpretation.intent === 'credit'
-            ? 'udhaar'
+          const entity = interpretation.entity_text ?? '';
+          const canonical = interpretation.intent === 'credit'
+            ? `${entity} ${interpretation.amount_text ?? ''} udhaar`
             : interpretation.intent === 'repayment'
-              ? 'jama'
+              ? `${entity} ${interpretation.amount_text ?? ''} jama`
               : interpretation.intent === 'balance'
-                ? 'balance'
-                : 'khatam';
-          const canonical = `${interpretation.entity_text} ${interpretation.amount_text ?? ''} ${actionText}`;
+                ? `${entity} balance`
+                : interpretation.intent === 'customer_create'
+                  ? `add new customer ${entity}`
+                  : interpretation.intent === 'stockout'
+                    ? `${entity} khatam`
+                    : interpretation.intent === 'stock_check'
+                      ? `check stock of ${entity}`
+                      : interpretation.intent === 'stock_count'
+                        ? `set ${entity} stock count to ${interpretation.count_text ?? ''}`
+                        : interpretation.intent === 'payment_summary'
+                          ? 'payment summary'
+                          : 'summarize shop activity';
           const candidate = parseMerchantCommand(canonical);
           if (candidate.status === 'ready' && candidate.intent === interpretation.intent) {
             parsed = candidate;
@@ -422,22 +442,67 @@ export default function HomeScreen() {
     }
     const commandId = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     try {
-      if (parsed.intent === 'stockout') {
+      if (parsed.intent === 'payment_summary' || parsed.intent === 'timeline_summary') {
+        const summary = await fetchActivitySummary();
+        const message = parsed.intent === 'payment_summary'
+          ? `Mock payment feed: ${summary.successful_payment_count} successful totaling ${formatRupees(summary.successful_payment_total_paise)}, ${summary.open_review_payment_count} waiting for review totaling ${formatRupees(summary.open_review_payment_total_paise)}, ${summary.pending_payment_count} pending, ${summary.failed_payment_count} failed, and ${summary.reversed_payment_count} reversed. Ledger repayments actually posted: ${summary.repayment_entry_count} totaling ${formatRupees(summary.repayment_total_paise)}. Latest events: ${summary.recent_payments.slice(0, 3).map((payment) => `${payment.payment_status} ${formatRupees(payment.amount_paise)} (${payment.resolution_status.toLowerCase().replace(/_/g, ' ')})`).join('; ') || 'none recorded'}. All recorded synthetic demo history; not live UPI.`
+          : `${summary.summary_text} Recent activity: ${summary.latest_events.slice(0, 3).map((event) => event.summary).join(' ')} All figures are synthetic demo records.`;
+        setCommandFeedback({
+          tone: 'success',
+          title: parsed.intent === 'payment_summary' ? 'Payment Summary · Synthetic Demo' : 'Shop Activity Summary · Synthetic Demo',
+          message,
+        });
+        return;
+      }
+
+      if (parsed.intent === 'customer_create') {
+        const resolution = await resolveCustomer(parsed.customerName);
+        if (resolution.status === 'AMBIGUOUS') {
+          setPendingCommand({
+            commandId,
+            sourceChannel,
+            intent: 'customer_create',
+            entityQuery: parsed.customerName,
+            matches: resolution.matches,
+            sourceUtterance: utterance,
+            createCustomerOnConfirm: false,
+          });
+          setCommandFeedback({ tone: 'info', title: 'Customer Name Already Matches Multiple Records', message: 'Choose a matching record to avoid creating a duplicate.' });
+          return;
+        }
+        if (resolution.status === 'RESOLVED') {
+          setCommandFeedback({ tone: 'info', title: 'Customer Already Exists', message: `${resolution.matches[0].display_name} already exists. No duplicate was created.` });
+          return;
+        }
+        setPendingCommand({
+          commandId,
+          sourceChannel,
+          intent: 'customer_create',
+          entityQuery: parsed.customerName,
+          sourceUtterance: utterance,
+          createCustomerOnConfirm: true,
+        });
+        setCommandFeedback({ tone: 'info', title: 'New Customer Preview', message: 'Review the transcribed name carefully. Confirming adds this exact customer; it does not create a credit entry.' });
+        return;
+      }
+
+      if (parsed.intent === 'stockout' || parsed.intent === 'stock_check' || parsed.intent === 'stock_count') {
         const productResolution = await resolveProduct(parsed.productQuery);
         if (productResolution.status === 'AMBIGUOUS') {
           setPendingCommand({
             commandId,
             sourceChannel,
-            intent: 'stockout',
+            intent: parsed.intent,
             entityQuery: parsed.productQuery,
             productMatches: productResolution.matches,
+            countedQuantity: parsed.intent === 'stock_count' ? parsed.countedQuantity : undefined,
             sourceUtterance: utterance,
             createCustomerOnConfirm: false,
           });
           setCommandFeedback({
             tone: 'info',
             title: 'Choose the Exact Product',
-            message: 'I found more than one exact product alias. Choose one before recording the stockout observation.',
+            message: 'I found more than one exact product alias. Choose one before checking or changing stock.',
           });
           return;
         }
@@ -452,22 +517,29 @@ export default function HomeScreen() {
 
         const product = productResolution.matches[0];
         const stock = await fetchProductStock(product.product_id);
+        if (parsed.intent === 'stock_check') {
+          setCommandFeedback({
+            tone: 'success',
+            title: `Current Stock · ${product.name}`,
+            message: `${stock.on_hand_quantity} ${stock.unit}${stock.on_hand_quantity === 1 ? '' : 's'} on hand. This is the latest recorded physical count, not a live sensor reading.`,
+          });
+          return;
+        }
         setPendingCommand({
           commandId,
           sourceChannel,
-          intent: 'stockout',
+          intent: parsed.intent,
           entityQuery: parsed.productQuery,
           product,
+          countedQuantity: parsed.intent === 'stock_count' ? parsed.countedQuantity : undefined,
           currentStockQuantity: stock.on_hand_quantity,
           stockUnit: stock.unit,
           sourceUtterance: utterance,
           createCustomerOnConfirm: false,
         });
-        setCommandFeedback({
-          tone: 'info',
-          title: 'Stockout Observation Preview',
-          message: 'Confirming records what you observed. It does not change the on-hand count.',
-        });
+        setCommandFeedback(parsed.intent === 'stockout'
+          ? { tone: 'info', title: 'Stockout Observation Preview', message: 'Confirming records what you observed. It does not change the on-hand count.' }
+          : { tone: 'info', title: 'Physical Count Preview', message: 'Review the product and counted quantity. Stock changes only after you confirm.' });
         return;
       }
 
@@ -571,6 +643,15 @@ export default function HomeScreen() {
     setLoading(true);
     setCommandFeedback(null);
     try {
+      if (command.intent === 'customer_create') {
+        setPendingCommand(null);
+        setCommandFeedback({
+          tone: 'info',
+          title: 'Customer Already Exists',
+          message: `Selected ${customer.display_name}. No duplicate was created.`,
+        });
+        return;
+      }
       const balance = await fetchCustomerBalance(customer.customer_id);
       setCustomerName(customer.display_name);
       setActiveCustomerId(customer.customer_id);
@@ -606,13 +687,22 @@ export default function HomeScreen() {
   };
 
   const handleChooseCommandProduct = async (product: Product) => {
-    if (!pendingCommand || pendingCommand.intent !== 'stockout' || commandBusyRef.current) return;
+    if (!pendingCommand || !['stockout', 'stock_check', 'stock_count'].includes(pendingCommand.intent) || commandBusyRef.current) return;
     const command = pendingCommand;
     commandBusyRef.current = true;
     setLoading(true);
     setCommandFeedback(null);
     try {
       const stock = await fetchProductStock(product.product_id);
+      if (command.intent === 'stock_check') {
+        setPendingCommand(null);
+        setCommandFeedback({
+          tone: 'success',
+          title: `Current Stock · ${product.name}`,
+          message: `${stock.on_hand_quantity} ${stock.unit}${stock.on_hand_quantity === 1 ? '' : 's'} on hand. This is the latest recorded physical count, not a live sensor reading.`,
+        });
+        return;
+      }
       setPendingCommand({
         ...command,
         product,
@@ -622,8 +712,10 @@ export default function HomeScreen() {
       });
       setCommandFeedback({
         tone: 'info',
-        title: 'Stockout Observation Preview',
-        message: `Selected ${product.name}. Confirm only if this is the right product. The on-hand count will stay unchanged.`,
+        title: command.intent === 'stockout' ? 'Stockout Observation Preview' : 'Physical Count Preview',
+        message: command.intent === 'stockout'
+          ? `Selected ${product.name}. Confirm only if this is the right product. The on-hand count will stay unchanged.`
+          : `Selected ${product.name}. Review the counted quantity before changing on-hand stock.`,
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -670,6 +762,68 @@ export default function HomeScreen() {
       }
       return;
     }
+
+    if (command.intent === 'customer_create') {
+      commandBusyRef.current = true;
+      setLoading(true);
+      setCommandFeedback(null);
+      try {
+        const created = await createCustomer({
+          display_name: command.entityQuery,
+          aliases: [command.entityQuery],
+          confirmed: true,
+          idempotency_key: `customer_${command.commandId}`,
+          source_utterance: command.sourceUtterance,
+          source_channel: command.sourceChannel,
+        });
+        setPendingCommand(null);
+        setCommandFeedback({
+          tone: 'success',
+          title: 'Customer Added',
+          message: `${created.display_name} was added with the exact transcribed name. No credit or repayment was recorded.`,
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        setCommandFeedback({ tone: 'error', title: 'Could Not Add Customer', message });
+      } finally {
+        commandBusyRef.current = false;
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (command.intent === 'stock_count') {
+      if (!command.product || command.countedQuantity === undefined) return;
+      commandBusyRef.current = true;
+      setLoading(true);
+      setCommandFeedback(null);
+      try {
+        const result = await recordPhysicalCount({
+          product_id: command.product.product_id,
+          counted_quantity: command.countedQuantity,
+          source_event_id: `event_${command.commandId}`,
+          idempotency_key: `stockcount_${command.commandId}`,
+          confirmed: true,
+          source_utterance: command.sourceUtterance,
+          source_channel: command.sourceChannel,
+        });
+        setPendingCommand(null);
+        setCommandFeedback({
+          tone: 'success',
+          title: 'Physical Count Recorded',
+          message: `${command.product.name} is now recorded at ${result.counted_quantity} ${result.unit}${result.counted_quantity === 1 ? '' : 's'}. Change from prior count: ${result.quantity_delta >= 0 ? '+' : ''}${result.quantity_delta}.`,
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        setCommandFeedback({ tone: 'error', title: 'Could Not Record Count', message: `${message} The preview remains available; retrying uses the same idempotency key.` });
+      } finally {
+        commandBusyRef.current = false;
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (command.intent === 'stock_check') return;
     if (command.intent === 'balance' || command.amountPaise === undefined) return;
 
     const currentBalance = command.currentBalancePaise ?? 0;
@@ -739,7 +893,8 @@ export default function HomeScreen() {
     const trimmed = input.trim();
     if (!trimmed) return;
 
-    const isInsight = trimmed.toLowerCase().includes('kaisa raha') || trimmed.toLowerCase().includes('summary');
+    const normalizedInput = trimmed.toLowerCase();
+    const isInsight = /kaisa raha|how was business|business brief|show insights/.test(normalizedInput);
     const entry: HistoryEntry = {
       id: `local-${Date.now()}`,
       text: trimmed,
@@ -876,11 +1031,17 @@ export default function HomeScreen() {
                         ? 'Jama Preview'
                         : pendingCommand.intent === 'stockout'
                           ? 'Stockout Preview'
+                          : pendingCommand.intent === 'stock_check'
+                            ? 'Stock Lookup'
+                            : pendingCommand.intent === 'stock_count'
+                              ? 'Physical Count Preview'
+                              : pendingCommand.intent === 'customer_create'
+                                ? 'New Customer Preview'
                           : 'Choose Customer'}
                   </Text>
                   <View style={styles.commandNotSavedBadge}>
                     <Text style={styles.commandNotSavedText}>
-                      {pendingCommand.intent === 'balance' ? 'READ ONLY' : 'NOT RECORDED'}
+                      {pendingCommand.intent === 'balance' || pendingCommand.intent === 'stock_check' ? 'READ ONLY' : 'NOT RECORDED'}
                     </Text>
                   </View>
                 </View>
@@ -932,9 +1093,11 @@ export default function HomeScreen() {
                 ) : (
                   <>
                     <Text style={styles.commandPreviewText}>
-                      {pendingCommand.intent === 'stockout'
+                      {['stockout', 'stock_check', 'stock_count'].includes(pendingCommand.intent)
                         ? `Product: ${pendingCommand.product?.name ?? pendingCommand.entityQuery}`
-                        : `Customer: ${pendingCommand.customer?.display_name ?? pendingCommand.entityQuery}`}
+                        : pendingCommand.intent === 'customer_create'
+                          ? `New customer name: ${pendingCommand.entityQuery}`
+                          : `Customer: ${pendingCommand.customer?.display_name ?? pendingCommand.entityQuery}`}
                     </Text>
                     {pendingCommand.amountPaise !== undefined && (
                       <Text style={styles.commandPreviewAmount}>
@@ -949,6 +1112,13 @@ export default function HomeScreen() {
                     {pendingCommand.intent === 'stockout' && (
                       <Text style={styles.commandPreviewNote}>This records an observation only. It will not change stock quantity; use a physical count to update on-hand.</Text>
                     )}
+                    {pendingCommand.intent === 'stock_count' && pendingCommand.countedQuantity !== undefined && (
+                      <>
+                        <Text style={styles.commandPreviewText}>Current on-hand: {pendingCommand.currentStockQuantity ?? 0} {pendingCommand.stockUnit ?? pendingCommand.product?.unit}</Text>
+                        <Text style={styles.commandPreviewAmount}>Counted quantity: {pendingCommand.countedQuantity}</Text>
+                        <Text style={styles.commandPreviewNote}>This confirmed count changes the recorded on-hand quantity. Check the product and count before confirming.</Text>
+                      </>
+                    )}
                     {pendingCommand.currentBalancePaise !== undefined && pendingCommand.amountPaise !== undefined && (
                       <Text style={styles.commandPreviewText}>
                         Current due: {formatRupees(pendingCommand.currentBalancePaise)}
@@ -959,7 +1129,7 @@ export default function HomeScreen() {
                     )}
                     {pendingCommand.createCustomerOnConfirm && (
                       <Text style={styles.commandPreviewNote}>
-                        Confirming also creates a new synthetic customer with this exact name. No fuzzy matching is used.
+                        Confirming creates a new synthetic customer with this exact transcribed name. Review spelling carefully; no credit or repayment is included.
                       </Text>
                     )}
                     {pendingCommand.intent === 'repayment' &&
@@ -970,7 +1140,7 @@ export default function HomeScreen() {
                           Amount exceeds the current due. Change the command; no repayment can be posted.
                         </Text>
                       )}
-                    {pendingCommand.intent !== 'balance' && (
+                    {pendingCommand.intent !== 'balance' && pendingCommand.intent !== 'stock_check' && (
                       <View style={styles.commandButtonRow}>
                         <TouchableOpacity
                           style={styles.commandCancelButton}
@@ -994,7 +1164,13 @@ export default function HomeScreen() {
                             pendingCommand.amountPaise > pendingCommand.currentBalancePaise)}
                         >
                           <Text style={styles.commandConfirmText}>
-                            {pendingCommand.intent === 'stockout' ? 'Confirm observation' : 'Confirm and record'}
+                            {pendingCommand.intent === 'stockout'
+                              ? 'Confirm observation'
+                              : pendingCommand.intent === 'stock_count'
+                                ? 'Confirm physical count'
+                                : pendingCommand.intent === 'customer_create'
+                                  ? 'Confirm and add customer'
+                                  : 'Confirm and record'}
                           </Text>
                         </TouchableOpacity>
                       </View>

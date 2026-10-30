@@ -101,6 +101,10 @@ Request fields: `product_id`, non-negative integer `counted_quantity`, `source_e
 
 Returns recent event IDs, event types, related entity, source event/channel/utterance, status, summary, and timestamp. The endpoint is read-only; it does not expose payment-provider credentials or raw customer contact data.
 
+## `GET /events/summary`
+
+Returns deterministic aggregate counts and totals for ledger credits/repayments, mock payment statuses, successful events awaiting review, inventory observations/counts, the latest five payment events, and latest five timeline events. `period_label` explicitly identifies the covered synthetic demo history. Mock successful payments are reported separately from repayments actually posted to the ledger; no causal or live-feed claims are made.
+
 ## `GET /insights/facts?persona=kirana`
 
 Returns facts in the shape defined by `docs/contracts/facts.schema.json`. Supported personas are `kirana`, `tea_stall`, and `medical_store`. The API seeds a deterministic 90-day synthetic transaction fixture when its local database is empty. The current window is the latest 7 full fixture days and the comparison is the preceding 7 full days. Values are computed in Python from rows; no LLM computes metrics. Raw payer tokens are never included in the response. Collections are UPI-only, lapsed-payer counts are synthetic-token counts, and before/after differences are not causal claims.
@@ -123,6 +127,10 @@ Returns facts in the shape defined by `docs/contracts/facts.schema.json`. Suppor
 
 An event is automatically allocated as a repayment only when its status is `SUCCESS`, its payer token has an exact confirmed mapping, and its full amount is no greater than that customer's outstanding balance. Failed, pending, or reversed events do not change the ledger. Missing mapping, no balance, or amount above balance is not auto-allocated. `GET /payments/review` lists unresolved successful events. `POST /payments/{event_id}/allocate` allows a merchant-confirmed manual allocation to a selected demo customer after checking that the full amount fits the outstanding balance. Neither path performs partial allocation. Payment events and manual resolutions are append-only; ledger balances remain derived from ledger entries.
 
+## `POST /commands/interpret`
+
+Gemini-assisted, read-only interpretation of one merchant utterance into a bounded supported intent and exact quoted name/amount/count spans. Supported intents include credit, repayment, balance, customer creation, stockout observation, stock lookup, physical count, payment summary, and timeline summary. Missing credentials, upstream errors, low confidence, or invalid spans return a clarification/unavailable result. This endpoint never writes; the client reparses locally, resolves an exact entity, previews every mutation, and requires explicit merchant confirmation.
+
 ## Explicitly not implemented in v0.5
 
-Voice/LLM command parsing, live action publication, authentication, and production payment integration. The facts-only explanation endpoint above is read-only and does not imply these behaviors exist.
+Live action publication, authentication, and production payment integration. Voice transcription is an input convenience and is not guaranteed to recognize names or spoken amounts correctly; the transcript must be reviewed. The facts-only explanation and command interpretation endpoints do not imply live Paytm connectivity or autonomous writes.

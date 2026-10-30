@@ -35,6 +35,8 @@ Open `http://localhost:8081/`. These commands use a fresh timestamped database; 
 5. **Show the growth brief.** On Home, press `Aaj kaisa raha?`. The brief should show synthetic facts, evidence IDs, and caveats. Gemini may be unavailable; the deterministic summary is the expected fallback and is visibly labelled.
 6. **Let the merchant approve a shop-side action.** Review or edit the counter notice. Example: `Ask us about this week's in-store offers. UPI accepted.` Click `Approve & Track for 7 Days (Mock)` only after reviewing it. Expect the exact saved text, `APPROVED_MOCK`, and a scheduled seven-day observation window. Nothing is published or sent.
 7. **Check the timeline.** Confirm it contains the credit, payment allocation, physical count, and mock-action approval. Keep comparisons observational; do not claim the action caused sales changes.
+8. **Try merchant commands on Home (typed or by transcript).** Examples: `Raju bhai ka balance batao`, `How many Maggi packs are left?`, `Summarize payments`, or `What happened in the shop today?`. Read-only results are labeled synthetic and stock is the latest recorded count, not a sensor reading.
+9. **Preview safe voice writes.** Use `Add new customer Rajju Sharma` to preview the exact spelling, then confirm to create only the customer profile. Use `Set Maggi stock count to 10 packs` or `Maggi khatam ho gaya` to see the preview; count and stockout remain distinct actions. Review the transcript before Send and the exact preview before Confirm.
 
 ## Expected limitations to say aloud
 
@@ -42,7 +44,7 @@ Open `http://localhost:8081/`. These commands use a fresh timestamped database; 
 - Gemini requests currently return 503 or time out in this environment; facts remain available and the app uses deterministic fallback.
 - Payment events and action publishing are mocked. No Paytm production API or merchant account is connected.
 - The seven-day outcome is a comparison window, not proof that the action caused any difference.
-- Voice capture/STT is deferred; typed input is the reliable demo path.
+- Voice transcription can feed these commands after transcript review. Name and number recognition may be imperfect; typed input remains the reliable fallback. The summary covers all synthetic demo history, not a live “today” feed.
 
 ## Safe recovery
 

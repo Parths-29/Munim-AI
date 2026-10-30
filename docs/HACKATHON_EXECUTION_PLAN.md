@@ -4,16 +4,17 @@ This is the current phase tracker for the hackathon prototype. Keep the Git work
 
 ## Phase 1 — Merchant command and ledger
 
-**Status: Core text flow implemented; browser command NLP assist added with deterministic fallback. Voice capture/transcription tuning remains deferred.**
+**Status: Core text flow and transcript-to-command flow implemented; command coverage expanded for customer creation, stock queries/counts, and summaries.**
 
-- Text and Sarvam voice input enter the bounded deterministic command parser.
+- Text and Sarvam transcripts enter the bounded deterministic command parser. Voice still requires reviewing the transcript and pressing Send; transcription accuracy is provider/device dependent.
 - If the parser cannot classify a command, the browser may ask Gemini to return exact quoted entity/amount spans using synthetic English/Hinglish examples; the app validates those spans and re-runs its deterministic parser before preview. This is prompt guidance, not model training. The updated local key is present, but the latest Gemini request returned HTTP 503 and the deterministic fallback remains active.
 - Customer/product aliases are resolved exactly; ambiguity or missing details stops for clarification.
-- Credit, repayment, and stockout writes show a preview, require merchant confirmation, and use idempotency keys.
+- Credit, repayment, customer creation, stockout observations, and physical stock counts show an exact preview and require merchant confirmation before writing. Customer creation alone creates only a profile, never a credit entry. Writes use idempotency keys.
+- Read-only voice/text commands can check customer balances, check the latest recorded stock count, summarize payment statuses versus repayments actually posted, and summarize recent shop activity.
 - Balances are derived from append-only ledger entries; repayments cannot exceed outstanding balance.
 - A read-only voice request transcribed, resolved the exact `Raju bhai` alias, and fetched the balance. A later voice-originated ₹10 credit was also recorded. Because spoken number recognition is inconsistent, treat voice as optional and use typed commands for reliable financial entry; do not keep expanding voice capture/transcription now. A transcript may use the same command NLP assist as typed browser input.
 
-**Exit gate:** Typed commands support the reliable financial path with preview and confirmation. Basic voice plumbing and one voice write were observed, but recognition fidelity is not a Phase 5 blocker; typed input remains the fallback.
+**Exit gate:** Common typed/transcribed commands resolve deterministically. Every mutation has exact preview plus explicit confirmation; balance/stock checks and summaries are read-only. Spoken-number/name recognition remains subject to transcript quality, so the merchant must review the text before sending.
 
 ## Phase 2 — Shop memory: inventory and timeline
 
@@ -57,6 +58,7 @@ This is the current phase tracker for the hackathon prototype. Keep the Git work
 5. **Passed (browser growth brief and mock action):** Five synthetic facts and a four-evidence deterministic explanation load in about 8 seconds. The merchant-approved action text is `Ask us about this week's in-store offers. UPI accepted.` Backend status is `APPROVED_MOCK`, `mock_only=true`, outcome `scheduled`, with a seven-day measurement window. Nothing was published.
 6. **Remaining (environment/demo):** Verify both services start from documented setup, check phone-to-laptop network access, and rehearse the complete scripted journey from a clean synthetic seed. The repeatable walkthrough is in [`BROWSER_DEMO_WALKTHROUGH.md`](BROWSER_DEMO_WALKTHROUGH.md).
 7. Freeze a known-good branch/commit and keep the demo script honest about synthetic data, deterministic fallback, mock publishing, and missing live Paytm integration.
+8. **Current continuation:** Add speech-friendly customer creation and inventory query/count commands, plus payment and activity summaries on Home and Timeline. The summary endpoint reports all records in the synthetic demo database, not a live “today” feed. User acceptance on device is still pending.
 
 **Completion gate:** The complete scripted journey works from a clean seed without manual database edits, every financial write has a confirmation step, and all claims match observed behavior.
 

@@ -33,9 +33,10 @@ export async function fetchHealth(): Promise<HealthResponse> {
 // ---------------------------------------------------------------------------
 export interface CommandInterpretResponse {
   status: 'ready' | 'clarification' | 'unavailable';
-  intent: 'credit' | 'repayment' | 'balance' | 'stockout' | null;
+  intent: 'credit' | 'repayment' | 'balance' | 'customer_create' | 'stockout' | 'stock_check' | 'stock_count' | 'payment_summary' | 'timeline_summary' | null;
   entity_text: string | null;
   amount_text: string | null;
+  count_text: string | null;
   confidence: number;
   message: string | null;
   provider_used: 'gemini' | 'fallback';
@@ -308,6 +309,46 @@ export interface TimelineEvent {
 export async function fetchEvents(limit: number = 50): Promise<TimelineEvent[]> {
   const res = await fetch(`${API_BASE_URL}/events?limit=${limit}`);
   if (!res.ok) throw new Error(`Fetch events failed with HTTP ${res.status}`);
+  return res.json();
+}
+
+export interface ActivitySummaryResponse {
+  data_mode: 'synthetic' | 'merchant_entered' | 'provider_mock';
+  period_label: string;
+  recorded_event_count: number;
+  credit_entry_count: number;
+  credit_total_paise: number;
+  repayment_entry_count: number;
+  repayment_total_paise: number;
+  payment_event_count: number;
+  successful_payment_count: number;
+  successful_payment_total_paise: number;
+  pending_payment_count: number;
+  pending_payment_total_paise: number;
+  failed_payment_count: number;
+  failed_payment_total_paise: number;
+  reversed_payment_count: number;
+  reversed_payment_total_paise: number;
+  open_review_payment_count: number;
+  open_review_payment_total_paise: number;
+  stockout_observation_count: number;
+  physical_count_event_count: number;
+  recent_payments: {
+    event_id: string;
+    amount_paise: number;
+    payment_status: 'SUCCESS' | 'PENDING' | 'FAILED' | 'REVERSED';
+    resolution_status: 'ALLOCATED' | 'REVIEW' | 'UNMATCHED' | 'IGNORED';
+    reason: string | null;
+    occurred_at: string;
+  }[];
+  latest_events: TimelineEvent[];
+  summary_text: string;
+  caveats: string[];
+}
+
+export async function fetchActivitySummary(): Promise<ActivitySummaryResponse> {
+  const res = await fetch(`${API_BASE_URL}/events/summary`);
+  if (!res.ok) throw new Error(`Fetch activity summary failed with HTTP ${res.status}`);
   return res.json();
 }
 
