@@ -337,3 +337,75 @@ class PaymentAllocationView(StrictModel):
     allocation_entry_id: str
     status: Literal["ALLOCATED"] = "ALLOCATED"
     idempotent_replay: bool = False
+
+
+# --- Suppliers and supplier payables (shop owes supplier) -------------------
+
+SourceChannel = Literal["text", "voice", "provider_mock", "system"]
+
+
+class SupplierCreate(StrictModel):
+    display_name: str = Field(min_length=1, max_length=100)
+    aliases: list[str] = Field(default_factory=list, max_length=12)
+    contact_phone: str | None = Field(default=None, max_length=20)
+    contact_note: str | None = Field(default=None, max_length=120)
+    confirmed: bool
+    idempotency_key: str = Field(min_length=8, max_length=150)
+    source_utterance: str | None = Field(default=None, max_length=240)
+    source_channel: SourceChannel = "text"
+
+
+class SupplierView(StrictModel):
+    supplier_id: str
+    display_name: str
+    aliases: list[str]
+    contact_phone_masked: str | None = None
+
+
+class SupplierResolution(StrictModel):
+    status: Literal["RESOLVED", "AMBIGUOUS", "NOT_FOUND"]
+    query: str
+    matches: list[SupplierView]
+
+
+class SupplierPaymentWrite(StrictModel):
+    amount_paise: int = Field(strict=True, gt=0)
+    source_event_id: str = Field(min_length=1, max_length=120)
+    idempotency_key: str = Field(min_length=8, max_length=150)
+    confirmed: bool
+    note: str | None = Field(default=None, max_length=200)
+    source_utterance: str | None = Field(default=None, max_length=240)
+    source_channel: SourceChannel = "text"
+
+
+class SupplierAdjustmentWrite(SupplierPaymentWrite):
+    entry_type: Literal["DEBIT_NOTE", "ADJUSTMENT_INCREASE", "ADJUSTMENT_DECREASE"]
+    note: str = Field(min_length=3, max_length=200)
+
+
+class SupplierPayableEntryView(StrictModel):
+    entry_id: str
+    supplier_id: str
+    entry_type: Literal["INVOICE_CREDIT", "PAYMENT", "DEBIT_NOTE", "ADJUSTMENT_INCREASE", "ADJUSTMENT_DECREASE"]
+    direction: Literal["INCREASES_DUE", "DECREASES_DUE"]
+    amount_paise: int
+    source_kind: str
+    source_document_id: str | None
+    note: str | None
+    status: str
+    source_event_id: str
+    created_at: datetime
+    idempotent_replay: bool = False
+
+
+class SupplierBalanceView(StrictModel):
+    supplier_id: str
+    display_name: str
+    amount_due_paise: int
+    currency: Literal["INR"] = "INR"
+    entry_count: int
+    totals_by_type_paise: dict[str, int]
+    sign_convention: str = (
+        "amount_due = INVOICE_CREDIT + ADJUSTMENT_INCREASE - PAYMENT - DEBIT_NOTE - ADJUSTMENT_DECREASE; "
+        "this is money the shop owes the supplier, separate from customer udhaar."
+    )

@@ -65,6 +65,8 @@ For current product requirements, open [docs/KIRANAOS_HACKATHON_PRD.md](docs/KIR
 
 For a self-contained explanation of the problem statement, current implementation, evidence, limits, and next steps, see [docs/PROJECT_BRIEF_AND_CURRENT_STATE.md](docs/PROJECT_BRIEF_AND_CURRENT_STATE.md).
 
+For the next backend-first roadmap—including supplier khata, invoice scanning, voice stock inward, consent-aware overdue reminders, and a copy/paste Claude Code handoff—see [docs/NEXT_PHASES_BACKEND_FIRST_PRD.md](docs/NEXT_PHASES_BACKEND_FIRST_PRD.md).
+
 ## Evidence and references
 
 - The track descriptions above are paraphrased from the event brief supplied by the team; they are not independently verified event rules.

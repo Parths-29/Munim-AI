@@ -62,6 +62,10 @@ For Expo Web, local CORS origins default to `http://localhost:8081` and `http://
 | `POST` | `/payments/intake` | Accept a provider-mock event; auto-allocate only on exact mapping and safe outstanding balance. |
 | `GET` | `/payments/review` | List unmatched or review-required successful mock payments. |
 | `POST` | `/payments/{event_id}/allocate` | Manually allocate a reviewed event after merchant confirmation and balance validation. |
+| `POST` | `/suppliers` | Add a supplier with exact aliases after confirmation (contact details optional, masked in responses). |
+| `GET` | `/suppliers`, `/suppliers/resolve?query=` | List suppliers; exact alias lookup (`RESOLVED`/`AMBIGUOUS`/`NOT_FOUND`). |
+| `GET` | `/suppliers/{id}/balance`, `/suppliers/{id}/entries` | Derived amount the shop owes the supplier, with entry breakdown. |
+| `POST` | `/suppliers/{id}/payments`, `/suppliers/{id}/adjustments` | Record a confirmed payment already made (no transfer) or a debit note/adjustment. |
 
 Customer, ledger, and inventory writes use a stable `idempotency_key`, a unique `source_event_id`, and explicit `confirmed` state. Use the accepted command ID as the idempotency key. Replaying either key or source event has one effect; reusing one for different operation details returns `409 Conflict`. Payment endpoints have their own documented event and confirmation rules below.
 
@@ -79,6 +83,20 @@ Example credit request:
 
 The SQLite database is created at `backend/data/munim.sqlite3` by default. On API startup, an empty database receives a repeatable 90-day synthetic payment fixture for three shop personas. Override the database location with `MUNIM_DB_PATH`. It is ignored by Git and should contain synthetic demo data only.
 
+## Tests
+
+Tests use a fresh temporary SQLite file per test and fake providers; they never read the demo database or call Gemini, Sarvam, SMS, or WhatsApp.
+
+```powershell
+cd backend
+python -m pip install -r requirements-dev.txt
+python -m pytest -q tests
+```
+
+## Schema migrations
+
+`initialize_database()` applies versioned, additive migrations from `app/services/migrations.py` and records them in `schema_migrations`. Migration 1 is the original schema, so an existing demo database upgrades in place without rewriting rows. Before upgrading a database you care about, copy the file; to roll back, stop the API and restore the copy.
+
 ## Seed the demo customer
 
 From the repository root, after installing backend requirements:
@@ -88,6 +106,6 @@ cd backend
 python seed_demo.py
 ```
 
-The seed command is designed to be replay-safe. It creates the synthetic Raju customer and a ₹500 opening credit, plus a Maggi product with 12 packs counted on hand. It prints the generated IDs and balances for the mobile demo.
+The seed command is designed to be replay-safe. It creates the synthetic Raju customer and a ₹500 opening credit, plus a Maggi product with 12 packs counted on hand, two synthetic suppliers (Sharma Distributors, Gupta Dairy) with zero payable, and inward products Amul Taaza (packet) and Dahi (cup). It prints the generated IDs and balances for the mobile demo.
 
 Mock payment events never claim a live provider connection. Non-success events are ignored for ledger allocation; missing payer mapping and over-balance amounts go to review. Manual allocation requires explicit confirmation, and the full payment amount must fit the outstanding balance; this prototype does not create automatic partial allocations.

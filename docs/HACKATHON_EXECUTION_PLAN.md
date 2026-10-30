@@ -62,9 +62,23 @@ This is the current phase tracker for the hackathon prototype. Keep the Git work
 
 **Completion gate:** The complete scripted journey works from a clean seed without manual database edits, every financial write has a confirmation step, and all claims match observed behavior.
 
+## Backend-first next phases (suppliers, invoices, inward, reminders)
+
+Spec: [`NEXT_PHASES_BACKEND_FIRST_PRD.md`](NEXT_PHASES_BACKEND_FIRST_PRD.md). Audit and acceptance checklist: [`NEXT_PHASES_AUDIT.md`](NEXT_PHASES_AUDIT.md). Backend/API only; the mobile UI is unchanged.
+
+| Phase | Scope | Status |
+|---|---|---|
+| N0 | Repository and safety audit | **Done** — audit saved; `.env` ignored; no tracked secrets or databases. |
+| N1 | Supplier accounts and payable khata | **Done** — 8 automated checks pass (ambiguity, separation from customer ledger, idempotency, append-only, masking). |
+| N2 | Invoice image intake and draft proposal | Pending |
+| N3 | Atomic invoice confirmation | Pending |
+| N4 | Quick voice inward | Pending |
+| N5 | 15-day reminder engine and mock outbox | Pending |
+| N6 | Integration, migration rehearsal, handoff | Pending |
+
 ## Deferred after the core demo
 
 - Fraud research signal integration, unless the core demo is stable and its model artifacts are independently checked.
-- Live Paytm data, real customer messaging, MongoDB migration, TTS, offline sync, supplier automation, and causal sales-lift claims.
+- Live Paytm data, real customer messaging, MongoDB migration, TTS, offline sync, automatic supplier payments, and causal sales-lift claims.
 
 Do not mark a phase complete from code presence alone; use the specific exit gate and record the evidence in [`BUILD_LOG.md`](BUILD_LOG.md).
