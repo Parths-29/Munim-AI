@@ -354,3 +354,11 @@
 - **Seed:** `seed_demo.py` adds synthetic Sharma Distributors and Gupta Dairy (zero payable) and Amul Taaza (packet) / Dahi (cup) products. Two consecutive runs against a temporary DB produced the same IDs.
 - **Checks:** `python -m pytest -q tests` → 8 passed (temp DB per test; no live providers).
 - **Limitations:** Single demo shop; no authentication. Supplier payments are records only.
+
+### 2026-10-30 — Next phases N2/N3: invoice photo proposals and atomic posting
+
+- **Migration 3:** `product_unit_conversions`, `intake_proposals` (versioned working drafts), append-only `intake_proposal_revisions`, `stock_receipts` (unique per supplier + normalized invoice number), and append-only `stock_receipt_movements`. No existing table was altered; on-hand is now physical-count deltas plus receipt movements.
+- **Intake (N2):** `POST /invoices/proposals` validates the actual image bytes (format sniffing, dimensions, size), calls a pluggable extraction provider (`gemini`/`fake`/`none`), and converts untrusted output to a draft with deterministic money/quantity parsing. Drafts carry per-field confidence, exact product/supplier matching with candidates, unit/conversion resolution, line and invoice arithmetic checks, and duplicate signals. A provider failure returns an empty manual draft. Image bytes are never stored (a test checks that the DB file has no PNG signature).
+- **Posting (N3):** `POST /invoices/proposals/{id}/confirm` requires the current version and content hash, revalidates on the server, requires an explicit `paid_now_paise`, then appends the receipt, movements, `INVOICE_CREDIT` payable, and events in one transaction. An injected failure after the movements and payable were inserted left zero rows in all three tables.
+- **Checks:** `python -m pytest -q tests` → 36 passed (temp DB per test; fake/failing providers only).
+- **Limitations:** Live Gemini vision has not been exercised in this run. The provider path is covered with fakes, and recent live Gemini calls returned 503/timeouts. Quantities are whole numbers in the product's base unit. Proposal drafts are working state (updated in place) with an append-only revision history.

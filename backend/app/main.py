@@ -12,6 +12,7 @@ from app.api.events import router as events_router
 from app.api.health import router as health_router
 from app.api.insights import router as insights_router
 from app.api.inventory import router as inventory_router
+from app.api.invoices import router as invoices_router
 from app.api.ledger import router as ledger_router
 from app.api.payments import router as payments_router
 from app.api.speech import router as speech_router
@@ -62,3 +63,4 @@ app.include_router(customers_router)
 app.include_router(events_router)
 app.include_router(ledger_router)
 app.include_router(suppliers_router)
+app.include_router(invoices_router)

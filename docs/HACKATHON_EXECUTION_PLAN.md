@@ -70,8 +70,8 @@ Spec: [`NEXT_PHASES_BACKEND_FIRST_PRD.md`](NEXT_PHASES_BACKEND_FIRST_PRD.md). Au
 |---|---|---|
 | N0 | Repository and safety audit | **Done** — audit saved; `.env` ignored; no tracked secrets or databases. |
 | N1 | Supplier accounts and payable khata | **Done** — 8 automated checks pass (ambiguity, separation from customer ledger, idempotency, append-only, masking). |
-| N2 | Invoice image intake and draft proposal | Pending |
-| N3 | Atomic invoice confirmation | Pending |
+| N2 | Invoice image intake and draft proposal | **Done**: 16 automated checks (draft-only, upload rejection, low confidence, mismatches, provider outage, duplicates, idempotent upload). |
+| N3 | Atomic invoice confirmation | **Done**: 11 automated checks (exactly-once posting, replay, stale hash, injected rollback, duplicate invoice, warning acknowledgement, pack conversion, count reconciliation). |
 | N4 | Quick voice inward | Pending |
 | N5 | 15-day reminder engine and mock outbox | Pending |
 | N6 | Integration, migration rehearsal, handoff | Pending |

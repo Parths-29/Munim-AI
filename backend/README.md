@@ -66,6 +66,13 @@ For Expo Web, local CORS origins default to `http://localhost:8081` and `http://
 | `GET` | `/suppliers`, `/suppliers/resolve?query=` | List suppliers; exact alias lookup (`RESOLVED`/`AMBIGUOUS`/`NOT_FOUND`). |
 | `GET` | `/suppliers/{id}/balance`, `/suppliers/{id}/entries` | Derived amount the shop owes the supplier, with entry breakdown. |
 | `POST` | `/suppliers/{id}/payments`, `/suppliers/{id}/adjustments` | Record a confirmed payment already made (no transfer) or a debit note/adjustment. |
+| `POST` | `/products/{id}/unit-conversions` | Save a merchant-confirmed pack size (e.g. 1 case = 24 packet). |
+| `POST` | `/invoices/proposals` | Upload a bill photo; returns a validated, editable draft. No stock/payable writes; image not retained. |
+| `POST` | `/invoices/proposals/manual` | Same draft from typed JSON (also the fallback when extraction is unavailable). |
+| `GET` | `/invoices/proposals`, `/invoices/proposals/{id}` | List or read drafts with recomputed issues. |
+| `POST` | `/invoices/proposals/{id}/revise`, `/reject` | Merchant edits (versioned) or rejection. |
+| `POST` | `/invoices/proposals/{id}/confirm` | Atomic posting: stock movements + supplier payable (total minus paid now) + events. |
+| `GET` | `/receipts/{id}` | Read a posted stock receipt. |
 
 Customer, ledger, and inventory writes use a stable `idempotency_key`, a unique `source_event_id`, and explicit `confirmed` state. Use the accepted command ID as the idempotency key. Replaying either key or source event has one effect; reusing one for different operation details returns `409 Conflict`. Payment endpoints have their own documented event and confirmation rules below.
 
@@ -82,6 +89,10 @@ Example credit request:
 ```
 
 The SQLite database is created at `backend/data/munim.sqlite3` by default. On API startup, an empty database receives a repeatable 90-day synthetic payment fixture for three shop personas. Override the database location with `MUNIM_DB_PATH`. It is ignored by Git and should contain synthetic demo data only.
+
+## Invoice extraction provider
+
+`MUNIM_INVOICE_PROVIDER` selects how bill photos are read: `gemini` (default; backend-only `GEMINI_API_KEY`, optional `GEMINI_VISION_MODEL` and `MUNIM_VISION_TIMEOUT_SECONDS`), `fake` (deterministic synthetic bill for demos without credentials), or `none` (always a manual draft). If the provider fails, the API still returns an empty editable draft; it never invents fields.
 
 ## Tests
 

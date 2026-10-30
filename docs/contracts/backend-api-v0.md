@@ -145,6 +145,58 @@ Supplier payables are money **the shop owes**. They are stored in `suppliers`, `
 
 Idempotency follows the ledger rules: replay of the same key/source event returns the original entry with `idempotent_replay: true`; reuse for different details returns `409`.
 
+## Stock-inflow proposals: invoice photos and manual bills (v0.9, Phases 2–3)
+
+A **proposal** is a versioned draft. Creating, reading, or revising one never changes stock or supplier dues. Validation is recomputed on every read, so a draft reflects current products, suppliers, conversions, and posted invoices.
+
+### Create
+
+- `POST /invoices/proposals` — multipart: `file` (JPEG/PNG/WebP), `idempotency_key`, optional `supplier_id`. The backend sniffs the real format from the bytes (the declared type must agree), reads dimensions, and enforces limits: default 8 MB (`MUNIM_INVOICE_MAX_BYTES`), sides 100–10,000 px, ≤ 50 MP. Errors: `400` empty, `413` too large, `415` unsupported or mismatched type, `422` malformed or too small. The image is processed in memory and discarded; only a SHA-256 digest is kept for duplicate-photo hints (`image_retained: false`). Replaying the key with the same image returns the same proposal; with a different image, `409`.
+- `POST /invoices/proposals/manual` — the same content as JSON (`supplier`, `invoice`, `lines`, `idempotency_key`) for typed bills or when extraction is unavailable.
+
+Extraction provider (`MUNIM_INVOICE_PROVIDER`): `gemini` (default; backend-only key, model `GEMINI_VISION_MODEL` → `GEMINI_MODEL` → `gemini-3.8-flash`, timeout `MUNIM_VISION_TIMEOUT_SECONDS`, default 20 s), `fake` (a deterministic synthetic bill for demos), or `none`. The model is asked to copy printed values as text. Deterministic code converts amounts to paise and quantities to whole numbers. Anything unreadable becomes `null` plus a note; a fractional quantity is never rounded and no value is invented. If the provider is down or times out, the response is still `201`: an empty draft with `extraction.status = "PROVIDER_UNAVAILABLE"`, ready for manual entry.
+
+### Proposal view
+
+`proposal_id`, `source_kind`, `status` (`NEEDS_REVIEW`, `READY`, `CONFIRMED`, `REJECTED`, `EXPIRED`; default expiry 7 days), `version`, `content_hash`, `supplier` (match status `RESOLVED`/`SELECTED`/`AMBIGUOUS`/`NOT_FOUND`/`NOT_PROVIDED` with candidates), `invoice` (number, date, subtotal/tax/discount/freight/other/rounding/total in paise, per-field confidence), `lines[]`, `issues[]`, `totals`, `ready_to_confirm`, `warnings_require_acknowledgement`, `extraction` (provider, model, status, correlation ID).
+
+Each line has `source_text`, `product_name_text`, `matched_product_id`, `match_status` (`MATCHED` exact alias, `SELECTED` by the merchant, `NEEDS_SELECTION` with candidates, `NOT_FOUND`), `quantity`, `unit_text`, canonical `unit`, `unit_options`, `conversion_factor`, `base_quantity`, `base_unit`, `unit_cost_paise`, `line_total_paise`, `confidence`, `accepted`, and its own `issues`.
+
+Issue severities:
+
+- **blocking** — stops confirmation. Examples: `PRODUCT_UNRESOLVED`, `PRODUCT_AMBIGUOUS`, `QUANTITY_MISSING`, `UNIT_MISSING`, `UNIT_CONVERSION_UNKNOWN`, `LOW_CONFIDENCE` (below `MUNIM_INTAKE_MIN_CONFIDENCE`, default 0.80, until the merchant verifies), `LOW_CONFIDENCE_HEADER`, `SUPPLIER_AMBIGUOUS`, `DUPLICATE_INVOICE_ALREADY_POSTED`, `DUPLICATE_INVOICE_CONFLICT`, `NO_ACCEPTED_LINES`.
+- **warning** — needs `acknowledge_warnings: true` at confirm. Examples: `LINE_TOTAL_MISMATCH` (quantity × unit cost ≠ line total), `INVOICE_TOTAL_MISMATCH` (subtotal + tax + freight + other − discount + rounding ≠ total), `LINES_SUBTOTAL_MISMATCH`, `POSSIBLE_DUPLICATE_*`, extraction notes.
+- **info** — advisory. Examples: `COMPONENTS_UNKNOWN` (components not shown are never derived), `TOTAL_UNKNOWN`.
+
+The arithmetic tolerance is `MUNIM_INVOICE_ROUNDING_TOLERANCE_PAISE` (default 100). Mismatched source values are kept as printed, never silently corrected.
+
+Units: synonyms of the same unit are normalized (`pkt`/`packets` → `packet`). A different unit (`case`, `crate`, `dozen`) needs either a merchant-entered `conversion_factor` on the line or a saved conversion. `POST /products/{id}/unit-conversions` takes `{unit, base_units_per_unit, confirmed, idempotency_key}`; conversions are append-only and the latest one wins. Pack sizes are never assumed.
+
+### Revise / reject
+
+- `POST /invoices/proposals/{id}/revise` — `expected_version`, `supplier {supplier_id | label}`, `invoice {…, verified}`, and the full `lines[]` (keep `line_id` to edit a line, omit it to add one, set `accepted: false` to exclude one, and set `merchant_verified`). This increments `version`, recomputes `content_hash`, and appends to `intake_proposal_revisions`. A stale version returns `409 STALE_PROPOSAL`.
+- `POST /invoices/proposals/{id}/reject` — `{expected_version, confirmed: true}`.
+
+### Confirm (atomic posting)
+
+`POST /invoices/proposals/{id}/confirm` with `{expected_version, content_hash, paid_now_paise, acknowledge_warnings, confirmed: true, idempotency_key}`.
+
+1. The version and hash must match the current draft, otherwise `409 STALE_PROPOSAL`. An amount edited after the preview cannot be posted without a fresh preview.
+2. The server revalidates everything. Blocking issues return `409 PROPOSAL_NOT_READY` with the issue list; unacknowledged warnings return `409 WARNINGS_NOT_ACKNOWLEDGED`.
+3. When a total exists, `paid_now_paise` is required (0 if unpaid) and must satisfy `0 ≤ paid_now ≤ total`. It is never inferred from a "PAID" stamp. A positive unpaid amount requires a supplier, otherwise `409 SUPPLIER_REQUIRED_FOR_PAYABLE`.
+4. **One transaction** appends:
+   - a `stock_receipts` row;
+   - one `stock_receipt_movements` row per accepted line (base-unit quantity, wholesale cost, on-hand-before snapshot);
+   - an `INVOICE_CREDIT` supplier payable for `total − paid_now` when that is positive;
+   - timeline events.
+
+   It then marks the proposal `CONFIRMED`. Any failure rolls every part back.
+5. The response is a `ReceiptView`: `receipt_id`, `payable_status` (`POSTED`, `FULLY_PAID_NOW`, `NOT_SUPPLIED`), supplier due before and after, per-line on-hand before and after, and `retail_price_changed: false`. Product rows are never updated.
+
+Replaying the same key returns the same receipt with `idempotent_replay: true`. A different key on an already-confirmed proposal returns `409 PROPOSAL_ALREADY_CONFIRMED`. A unique index allows one posting per `(supplier, normalized invoice number)`. `GET /receipts/{id}` re-reads a receipt.
+
+On-hand stock is now `SUM(physical-count deltas) + SUM(receipt movements)`, and a later physical count computes its delta against that combined figure.
+
 ## Explicitly not implemented in v0.5
 
 Live action publication, authentication, and production payment integration. Voice transcription is an input convenience and is not guaranteed to recognize names or spoken amounts correctly; the transcript must be reviewed. The facts-only explanation and command interpretation endpoints do not imply live Paytm connectivity or autonomous writes.
