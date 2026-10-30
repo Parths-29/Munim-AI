@@ -17,14 +17,14 @@
    - Credit, repayment, and stockout requests show a preview and require explicit confirmation. Backend writes use idempotency keys.
    - If a credit customer is not found, the preview says that confirmation will create that exact customer and post the credit. Missing repayment/balance customers and missing products are not created automatically.
    - Stockout is recorded as an observation; on-hand quantity stays unchanged until a physical count is confirmed.
-   - This command parser is a narrow demo rule set, not an LLM command parser. The separate facts explainer can use Gemini with deterministic fallback.
+   - The deterministic parser stays first. If it cannot classify a request, the backend can ask Gemini for exact quoted intent/entity/amount spans; the client re-parses those spans and still requires exact entity resolution and merchant confirmation. Synthetic prompt examples guide phrasing but do not train Gemini. The facts explainer and command assist both fall back when Gemini is unavailable.
    - Voice button records up to 20 seconds, sends the clip to the backend for Sarvam transliteration, and places the transcript in the editable input. The merchant reviews and taps send; ledger writes still show the existing preview and require confirmation. Audio is removed from the app cache after transcription.
 
 2. **Payment Review (`PaymentReviewScreen`):**
    - Lists unmatched or review-required successful mock payments (`GET /payments/review`).
-   - Can add a clearly labelled synthetic ₹300 payment to populate the review queue (`POST /payments/intake`).
+   - Can add a clearly labelled synthetic ₹200 payment to populate the review queue (`POST /payments/intake`).
    - Explicit synthetic mock disclaimer banner.
-   - Merchant-confirmed manual allocation to a verified customer (`POST /payments/{event_id}/allocate`).
+   - Merchant-confirmed manual allocation to a verified customer (`POST /payments/{event_id}/allocate`); payments above the current due are rejected with a readable message and do not create ledger entries.
 
 3. **Inventory & Stock (`InventoryScreen`):**
    - Product alias resolution (`GET /products/resolve`) and product catalog creation (`POST /products`).

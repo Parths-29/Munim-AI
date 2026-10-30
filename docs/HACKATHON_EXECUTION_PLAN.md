@@ -52,9 +52,10 @@ This is the current phase tracker for the hackathon prototype. Keep the Git work
 
 1. **Passed (service-level):** Created a clean Phase 5 synthetic database with Raju opening due ₹500 and Maggi stock 12; preserved the previous preview database separately.
 2. **Passed (isolated logic rehearsal):** Confirmed ₹50 credit, ₹300 unmatched payment review and merchant-confirmed allocation, ending balance ₹250; stockout did not change stock before count; confirmed count set stock to 10; five facts, deterministic explanation, and scheduled mock action all worked.
-3. **In progress (browser-backed state audit):** The current local demo data has Raju due ₹250, Maggi stock 12, and one successful unmatched ₹300 mock payment (`payer_token_missing`). Manual allocation correctly returned 409 because the payment exceeds the outstanding due. The review screen now offers a ₹200 synthetic payment for a safe eligible allocation path and explains over-balance rejection clearly.
-4. **Remaining:** Rehearse the core paths through the browser/phone UI, verify both services start from the documented setup, and check phone-to-laptop network access.
-5. Freeze a known-good branch/commit and keep the demo script honest about synthetic data, deterministic fallback, mock publishing, and missing live Paytm integration.
+3. **Passed (browser-backed payment review):** A successful synthetic ₹300 event was merchant-confirmed and allocated; the review queue is empty, the derived Raju due is ₹250, and the timeline records the repayment. An earlier over-balance attempt was rejected without a ledger write.
+4. **Remaining (browser):** Exercise stockout observation vs. physical count; load the facts brief, review its Gemini/deterministic status, and approve one mock shop-side action.
+5. **Remaining (environment/demo):** Verify both services start from documented setup, check phone-to-laptop network access, and rehearse the complete scripted journey from a clean synthetic seed.
+6. Freeze a known-good branch/commit and keep the demo script honest about synthetic data, deterministic fallback, mock publishing, and missing live Paytm integration.
 
 **Completion gate:** The complete scripted journey works from a clean seed without manual database edits, every financial write has a confirmation step, and all claims match observed behavior.
 

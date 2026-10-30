@@ -250,7 +250,8 @@ def explain_business_facts(facts_view: BusinessFactsView) -> BriefExplanationRes
             headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        # Keep the browser brief responsive; deterministic fallback covers provider stalls.
+        with urllib.request.urlopen(req, timeout=8) as resp:
             resp_body = json.loads(resp.read().decode("utf-8"))
 
         raw_text = resp_body["candidates"][0]["content"]["parts"][0]["text"].strip()

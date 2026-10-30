@@ -287,3 +287,17 @@
 - **Read-only browser-data audit:** Local demo database currently reports Raju due ₹250, Maggi stock 12, seven timeline events, and one successful unmatched mock payment of ₹300 with reason `payer_token_missing`.
 - **Payment behavior:** Manual allocation of that ₹300 payment was rejected with HTTP 409 because it exceeds the customer's current ₹250 due. This is expected balance protection; no repayment was posted. Updated the browser error mapping to show both values and state that no ledger entry was created. Changed the next demo payment button to add a synthetic ₹200 payment so it can fit the current ₹250 due when manually confirmed.
 - **Next:** Refresh the browser and use the new ₹200 mock payment for the eligible manual-allocation path. Keep the old ₹300 item unresolved as an example of an over-balance payment being held safely. Retry Gemini later when the provider stops returning 503.
+
+### 2026-10-30 — Browser payment review verified; Phase 5 moved to inventory and growth brief
+
+- **Browser evidence:** The latest backend timeline records a merchant-confirmed ₹300 payment allocation (`REPAYMENT_POSTED`), the payment review queue is empty, and Raju's balance is ₹250. This matches the demo arithmetic of ₹550 due before allocation and ₹250 after; the previous over-balance allocation attempt had no ledger effect.
+- **Current shop state:** Maggi stock is 12 packs. A physical count is in the timeline, but there is no stockout-observation event yet. The latest actions lookup has no approved mock growth action.
+- **Next Phase 5 work:** Browser walkthrough of the inventory distinction (observe stockout, verify stock remains 12, then confirm a physical count), followed by facts brief review and merchant-approved mock action. Phone-to-laptop access is still unverified.
+- **Gemini responsiveness:** Both the command interpreter and facts explainer now cap upstream requests at 8 seconds before deterministic fallback. Recent command calls timed out; a direct minimal Gemini request returned HTTP 503. The valid-key inference path remains unverified; no secret was printed or committed.
+
+### 2026-10-30 — Eight-second Gemini fallback verified
+
+- **Facts explainer:** `POST /insights/explain` returned HTTP 200 with `fallback_used=true`, 4 evidence IDs, and the bounded `counter_notice` action type in 8.6 seconds.
+- **Command NLP:** An unsupported synthetic balance phrasing returned HTTP 200 with `status=unavailable`, `provider_used=fallback`, and `fallback_used=true` in 8.3 seconds.
+- **Conclusion:** Browser-facing insights and command routes complete safely with the updated key present even while the upstream model stalls. The request latency is bounded near the 8-second timeout. Gemini-generated output remains unverified.
+- **Next:** In the browser, open Inventory, look up Maggi, record a stockout observation and verify stock remains 12; then enter and confirm a physical count of 10. After that, load the merchant brief and approve one mock action, verifying its “not published” label and scheduled outcome.

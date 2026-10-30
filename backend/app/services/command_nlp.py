@@ -90,7 +90,7 @@ def interpret_command(request: CommandInterpretRequest) -> CommandInterpretRespo
             headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=12) as response:
+        with urllib.request.urlopen(req, timeout=8) as response:
             body = json.loads(response.read().decode("utf-8"))
         raw = body["candidates"][0]["content"]["parts"][0]["text"].strip()
         if raw.startswith("```"):
