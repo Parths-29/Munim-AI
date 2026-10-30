@@ -5,7 +5,7 @@
 ## Current status snapshot
 
 **Last checked:** 30 October 2026  
-**Active work branch:** `codex/explainer-hardening` at `6ce832d`
+**Active work branch:** `codex/explainer-hardening` (latest code change: `85526fb`; subsequent commits update this log)
 **Base:** `origin/main` at `12f8491`
 **Working tree:** clean at the last local check.
 **Merge status:** Antigravity’s explainer work is merged into `main` in PR #6. The hardening changes (`85526fb`) and handoff docs (`6ce832d`) are pushed to this branch and are not in `main`; a PR has not yet been opened for them. A separate remote branch, `antigravity/handoff-audit` at `b813ac6`, adds a longer audit version of this log only.
@@ -28,10 +28,11 @@
 ### Verification ledger
 
 - **Verified from Git at this snapshot:** remote refs fetched; `main` is `12f8491`; `codex/explainer-hardening` is `6ce832d`; the branch is pushed and the local working tree was clean.
-- **Verified by Codex:** `git diff --check` passed before the hardening commit.
+- **Verified by Codex:** `git diff --check` passed before the hardening commit; see the latest verification milestone below for runtime/mobile checks on the current branch.
 - **Reported by Antigravity, not rerun on the hardening branch:** TypeScript typecheck and Android Expo export passed for the explainer implementation; fallback endpoint returned valid JSON; Gemini requests reportedly timed out or returned 503.
-- **Reported in the later Antigravity audit, not independently verified by Codex:** mobile typecheck and Android Expo export passed; direct Gemini call timed out after about 15 seconds. Backend facts/explainer were described as passing, but the pasted command history shows pytest, TestClient, and direct Python smoke attempts exiting with code 1 and does not include the later successful command/output. Treat backend runtime status as **unverified** until a reproducible passing command and output are recorded.
-- **Not verified on the current hardening branch:** backend smoke checks, mobile typecheck, Android export, live Gemini response, and full phone-to-backend demo.
+- **Reported in the later Antigravity audit:** mobile typecheck and Android Expo export passed; direct Gemini call timed out after about 15 seconds. The audit described backend facts/explainer as passing, but its supplied command history showed earlier pytest, TestClient, and direct Python smoke attempts exiting with code 1 without the later successful command/output. Codex subsequently reproduced the backend fallback path through local HTTP; details are below.
+- **Verified by Codex on the current hardening branch:** backend facts/explainer HTTP smoke with a temporary SQLite database and Gemini disabled; mobile typecheck; Android export. See the latest milestone for exact outcomes.
+- **Still not verified:** live Gemini response and full physical-phone-to-laptop demo.
 
 ## How to resume on another laptop
 
@@ -95,4 +96,15 @@
 - **Changes:** Antigravity pushed `antigravity/handoff-audit` at `b813ac6`, based on `codex/explainer-hardening` at `6ce832d`. The remote commit changes only `docs/BUILD_LOG.md`; it does not add application code.
 - **Checks reported:** mobile TypeScript check and Android export passed; Gemini direct call timed out; the report claims backend fact/explainer/fallback behavior passed.
 - **Evidence gap:** the command history supplied with that report also lists backend pytest, TestClient smoke, and direct Python smoke attempts exiting with code 1. The report gives no exact successful backend command or output to reconcile those failures. Codex therefore records backend verification as unverified.
-- **Next:** inspect the precise backend failures and run a reproducible backend smoke check before opening a PR. Keep using `codex/explainer-hardening` as the working branch; do not merge the audit-only branch as the code PR by default.
+- **Outcome:** Codex later ran a reproducible local HTTP smoke check successfully; see the following milestone. Keep using `codex/explainer-hardening` as the working branch; do not merge the audit-only branch as the code PR by default.
+
+### 2026-10-30 — Codex backend and mobile verification
+
+- **Goal:** independently verify the hardening branch after receiving the audit report.
+- **Backend:** an isolated temporary SQLite database was seeded and exercised through local Uvicorn plus Python's standard-library HTTP client. `GET /insights/facts?persona=kirana` returned HTTP 200 with 5 facts; `POST /insights/explain` returned HTTP 200, used deterministic fallback without reading or using a Gemini key, and returned the fixed `counter_notice` action. OpenAPI exposed the POST route. **Passed.**
+- **TestClient note:** the installed Starlette TestClient could not import because its optional `httpx2` dependency is absent. This is a test-client environment dependency, not an application runtime failure; the HTTP smoke check above exercised the real ASGI server instead. No test dependency was added.
+- **Mobile dependencies:** `npm run typecheck` initially could not start because the existing `node_modules` lacked `tsc`. `npm ci` restored the lockfile dependencies without tracked file changes.
+- **Mobile checks:** `npm run typecheck` exited 0. `npx expo export --platform android` exited 0 and bundled 706 modules into Hermes bytecode. **Passed.**
+- **Dependency note:** `npm ci` reported 8 dependency advisories (5 low, 3 high). `npm audit --omit=dev` also exited 1 and identified high-severity transitive advisories in `deepmerge` and `zod` through Expo tooling. The suggested `npm audit fix --force` would downgrade Expo to 51, so no dependency changes were made. The branch does not change `package.json` or the lockfile; assess these existing advisories separately before release.
+- **Limitations:** Gemini live connectivity was deliberately not tested; the fallback was forced so no local key or billable API request was used. Physical-device/LAN demo remains unverified.
+- **Next:** review the branch diff and open a PR for `codex/explainer-hardening`; the dependency advisories are inherited from the current Expo dependency tree and were not introduced by this branch.
