@@ -430,3 +430,53 @@ export async function fetchBriefExplanation(
   if (!res.ok) throw new Error(`Fetch brief explanation failed with HTTP ${res.status}`);
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Merchant-approved mock action and outcome tracking
+// ---------------------------------------------------------------------------
+export interface MockActionResponse {
+  action_id: string;
+  action_type: ActionType;
+  action_text: string;
+  status: 'APPROVED_MOCK';
+  mock_only: true;
+  created_at: string;
+  baseline_start: string;
+  baseline_end: string;
+  baseline_collections_paise: number;
+  baseline_transaction_count: number;
+  measurement_start: string;
+  measurement_end: string;
+  outcome_status: 'scheduled' | 'available' | 'insufficient_data';
+  outcome_collections_paise: number | null;
+  outcome_transaction_count: number | null;
+  collections_change_paise: number | null;
+  outcome_note: string;
+}
+
+export interface ApproveMockActionRequest {
+  persona: Persona;
+  action_type: ActionType;
+  action_text: string;
+  confirmed: true;
+  idempotency_key: string;
+}
+
+export async function approveMockAction(req: ApproveMockActionRequest): Promise<MockActionResponse> {
+  const res = await fetch(`${API_BASE_URL}/actions/mock`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.detail ?? `Mock action approval failed with HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchLatestMockAction(persona: Persona = 'kirana'): Promise<MockActionResponse | null> {
+  const res = await fetch(`${API_BASE_URL}/actions/latest?persona=${encodeURIComponent(persona)}`);
+  if (!res.ok) throw new Error(`Fetch latest mock action failed with HTTP ${res.status}`);
+  return res.json();
+}

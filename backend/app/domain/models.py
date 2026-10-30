@@ -189,6 +189,34 @@ class BriefExplanationResponse(StrictModel):
     validation_errors: list[str] = Field(default_factory=list)
 
 
+class MockActionCreate(StrictModel):
+    persona: Literal["kirana", "tea_stall", "medical_store"] = "kirana"
+    action_type: Literal["counter_notice", "qr_offer_mock"]
+    action_text: str = Field(min_length=1, max_length=240)
+    confirmed: bool
+    idempotency_key: str = Field(min_length=8, max_length=150)
+
+
+class MockActionView(StrictModel):
+    action_id: str
+    action_type: Literal["counter_notice", "qr_offer_mock"]
+    action_text: str
+    status: Literal["APPROVED_MOCK"]
+    mock_only: Literal[True] = True
+    created_at: datetime
+    baseline_start: datetime
+    baseline_end: datetime
+    baseline_collections_paise: int
+    baseline_transaction_count: int
+    measurement_start: datetime
+    measurement_end: datetime
+    outcome_status: Literal["scheduled", "available", "insufficient_data"]
+    outcome_collections_paise: int | None = None
+    outcome_transaction_count: int | None = None
+    collections_change_paise: int | None = None
+    outcome_note: str
+
+
 class PayerMappingCreate(StrictModel):
     payer_token: str = Field(min_length=1, max_length=100)
     customer_id: str = Field(min_length=1, max_length=100)

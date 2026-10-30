@@ -177,6 +177,39 @@ CREATE TABLE IF NOT EXISTS synthetic_transactions (
 CREATE INDEX IF NOT EXISTS ix_synthetic_tx_shop_time
     ON synthetic_transactions(shop_id, occurred_at);
 
+CREATE TABLE IF NOT EXISTS mock_actions (
+    action_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    persona TEXT NOT NULL CHECK (persona IN ('kirana', 'tea_stall', 'medical_store')),
+    action_type TEXT NOT NULL CHECK (action_type IN ('counter_notice', 'qr_offer_mock')),
+    action_text TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status = 'APPROVED_MOCK'),
+    baseline_start TEXT NOT NULL,
+    baseline_end TEXT NOT NULL,
+    baseline_collections_paise INTEGER NOT NULL CHECK (baseline_collections_paise >= 0),
+    baseline_transaction_count INTEGER NOT NULL CHECK (baseline_transaction_count >= 0),
+    measurement_start TEXT NOT NULL,
+    measurement_end TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    UNIQUE (shop_id, action_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_mock_actions_shop_created
+    ON mock_actions(shop_id, created_at DESC);
+
+CREATE TRIGGER IF NOT EXISTS mock_actions_no_update
+BEFORE UPDATE ON mock_actions
+BEGIN
+    SELECT RAISE(ABORT, 'mock actions are append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS mock_actions_no_delete
+BEFORE DELETE ON mock_actions
+BEGIN
+    SELECT RAISE(ABORT, 'mock actions are append-only');
+END;
+
 CREATE TABLE IF NOT EXISTS payer_customer_mappings (
     mapping_id TEXT PRIMARY KEY,
     shop_id TEXT NOT NULL,

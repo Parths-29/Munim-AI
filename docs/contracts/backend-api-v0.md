@@ -1,4 +1,4 @@
-# Backend API contract v0.5
+# Backend API contract v0.6
 
 This describes the synthetic single-shop backend slice on the current task branch. It supplements the AI proposal schemas; it is not a Paytm API contract.
 
@@ -93,7 +93,13 @@ Returns facts in the shape defined by `docs/contracts/facts.schema.json`. Suppor
 
 ## Facts-only explanation (current hardening branch)
 
-`POST /insights/explain` accepts `{"persona":"kirana"}` (supported personas: `kirana`, `tea_stall`, `medical_store`) and returns an explanation, evidence IDs, a permitted action type, and backend-owned action copy. The backend may call Gemini server-side; missing credentials, upstream errors, or invalid model output use a deterministic fallback. The model does not write to the database or publish an action. On `codex/explainer-hardening`, this is the route used by the mobile brief. The hardening branch is not yet merged into `main`; see [`../BUILD_LOG.md`](../BUILD_LOG.md) for verification and merge status.
+`POST /insights/explain` accepts `{"persona":"kirana"}` (supported personas: `kirana`, `tea_stall`, `medical_store`) and returns an explanation, evidence IDs, a permitted action type, and backend-owned action copy. The backend may call Gemini server-side; missing credentials, upstream errors, or invalid model output use a deterministic fallback. The model does not write to the database or publish an action. This route is part of `main` after PR #9; see [`../BUILD_LOG.md`](../BUILD_LOG.md) for current verification status.
+
+## Merchant-approved mock action and outcome window
+
+`POST /actions/mock` records a merchant-confirmed mock action. Request fields are `persona`, `action_type` (`counter_notice` or `qr_offer_mock`), `action_text`, `confirmed: true`, and an `idempotency_key`. The backend snapshots the latest available 7-day synthetic UPI collections baseline and schedules a 7-day observation window beginning at approval time. The action is append-only and visibly marked `APPROVED_MOCK`; no offer is published or sent. A repeated request with the same key and same action returns the original record; using that key for different action details returns `409`.
+
+`GET /actions/latest?persona=kirana` restores the most recent saved action for the persona. Its `outcome_status` is `scheduled` until the observation window ends, `available` only when the window has transaction rows, or `insufficient_data` when the window ended without rows. An available comparison reports raw UPI collections/count and the difference from the saved baseline, but never claims causation. Current demo fixtures end on 2026-10-29, so newly approved actions remain scheduled and later resolve to insufficient data unless post-approval transaction rows are supplied. There is no live payment feed in this prototype.
 
 ## Mocked payment intake and review
 
