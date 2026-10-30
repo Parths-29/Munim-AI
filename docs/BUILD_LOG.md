@@ -301,3 +301,9 @@
 - **Command NLP:** An unsupported synthetic balance phrasing returned HTTP 200 with `status=unavailable`, `provider_used=fallback`, and `fallback_used=true` in 8.3 seconds.
 - **Conclusion:** Browser-facing insights and command routes complete safely with the updated key present even while the upstream model stalls. The request latency is bounded near the 8-second timeout. Gemini-generated output remains unverified.
 - **Next:** In the browser, open Inventory, look up Maggi, record a stockout observation and verify stock remains 12; then enter and confirm a physical count of 10. After that, load the merchant brief and approve one mock action, verifying its “not published” label and scheduled outcome.
+
+### 2026-10-30 — Browser inventory acceptance check not passed yet
+
+- **Observed after user reported completion:** Maggi's current on-hand quantity is 23 packs; the latest timeline event is `STOCK_COUNT_RECORDED` with source utterance `Physical count: 23`. The timeline has no `STOCKOUT_OBSERVED` event.
+- **Result:** The intended stockout-then-count check (stock stays at 12 after observation, then becomes 10 after the entered count) is not verified. No data was changed by this audit.
+- **Next:** Repeat the stockout observation action, verify the quantity remains unchanged, then enter the intended physical count and confirm. Proceed to the growth brief/mock action after the inventory gate is clear.
