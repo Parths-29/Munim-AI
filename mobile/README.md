@@ -237,6 +237,7 @@ in `backend/README.md` before opening the app.
   check. Every transcript remains editable and data-changing commands still
   require the normal merchant preview and confirmation.
 - The deterministic command parser accepts numeric rupee amounts with Indian
-  or western comma grouping and Devanagari digits. It does not infer amount
-  words such as “pachaas”; unsupported or ambiguous wording needs correction.
+  or western comma grouping, Devanagari digits, and common Hindi number words
+  when they are followed by a rupee unit (for example, “das rupaye”). A number
+  word without a currency unit asks for clarification rather than being guessed.
 
