@@ -63,6 +63,8 @@ Gemini is configured in the local ignored `.env`, but recent upstream requests r
 
 For current product requirements, open [docs/KIRANAOS_HACKATHON_PRD.md](docs/KIRANAOS_HACKATHON_PRD.md). For continuously coordinated work, branch ownership, and the Git/PR loop, open [docs/CONTINUOUS_COLLABORATION.md](docs/CONTINUOUS_COLLABORATION.md). [docs/PRD.md](docs/PRD.md), [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md), and [docs/HACKATHON_EXECUTION_PLAN.md](docs/HACKATHON_EXECUTION_PLAN.md) preserve earlier iterations and are not the current workflow.
 
+For a self-contained explanation of the problem statement, current implementation, evidence, limits, and next steps, see [docs/PROJECT_BRIEF_AND_CURRENT_STATE.md](docs/PROJECT_BRIEF_AND_CURRENT_STATE.md).
+
 ## Evidence and references
 
 - The track descriptions above are paraphrased from the event brief supplied by the team; they are not independently verified event rules.
