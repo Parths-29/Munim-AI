@@ -32,6 +32,9 @@ SYNTHETIC_EXAMPLES = [
     {"utterance": "Raju ko udhaar likho", "intent": "clarification", "entity_text": "Raju", "amount_text": None},
     {"utterance": "Raju gave me either 50 or 500", "intent": "clarification", "entity_text": "Raju", "amount_text": None},
     {"utterance": "Raju balance check karke 50 ka udhaar likh do", "intent": "clarification", "entity_text": "Raju", "amount_text": None},
+    {"utterance": "Raju ko pachaas rupaye udhaar add karo", "intent": "credit", "entity_text": "Raju", "amount_text": "pachaas rupaye"},
+    {"utterance": "pachs add kro", "intent": "clarification", "entity_text": None, "amount_text": None},
+    {"utterance": "Raju ko 50 rupaye add karo", "intent": "clarification", "entity_text": "Raju", "amount_text": "50 rupaye"},
 ]
 
 SUPPORTED_INTENTS = {
@@ -42,6 +45,13 @@ RUPEE_AMOUNT = re.compile(
     r"^(?:₹\s*\d[\d,]*(?:\.\d{1,2})?|rs\.?\s*\d[\d,]*(?:\.\d{1,2})?|(?:\d[\d,]*(?:\.\d{1,2})?|[a-z]+(?:\s+[a-z]+){0,4})\s+(?:rupees?|rupaye|rupay|rupya))$",
     re.I,
 )
+# Credit vs repayment must be said, not inferred: the utterance needs an action word for the chosen intent.
+CREDIT_CUES = re.compile(r"\b(?:udhaar|udhar|udhari|udhaari|credit|borrowed|lend|lent)\b", re.I)
+REPAYMENT_CUES = re.compile(
+    r"\b(?:jama|jamaa|jamma|paid|pay|repay(?:ment)?|received|vasool(?:i)?|wapas|waapas|vapas|diye|diya|chukaya|chukaye|returned|gave)\b",
+    re.I,
+)
+EXPLICIT_RUPEE = re.compile(r"₹\s*\d|\b(?:rs\.?|inr)\s*\d|\b(?:rupees?|rupaye|rupay|rupya)\b", re.I)
 COUNT_SPAN = re.compile(r"^(?:\d{1,9}|[a-z]+(?:\s+[a-z]+){0,4})\s+(?:packs?|pieces?|bottles?|units?|items?)$", re.I)
 
 
@@ -62,6 +72,21 @@ def _get_api_key() -> str | None:
 
 def _same_literal_span(utterance: str, candidate: object) -> bool:
     return isinstance(candidate, str) and bool(candidate.strip()) and candidate.strip().casefold() in utterance.casefold()
+
+
+def _missing_details_message(utterance: str, entity: object) -> str:
+    """A specific follow-up for credit/repayment-like utterances, computed from the utterance itself."""
+    missing = []
+    if not _same_literal_span(utterance, entity) or str(entity).strip().casefold() == utterance.casefold():
+        missing.append("which customer it is for")
+    if not (CREDIT_CUES.search(utterance) or REPAYMENT_CUES.search(utterance)):
+        missing.append("whether it is udhaar (credit given) or jama (payment received)")
+    if not EXPLICIT_RUPEE.search(utterance):
+        missing.append("the amount in rupees")
+    if not missing:
+        return "Please clarify the action, exact customer or product, and amount if needed."
+    listed = missing[0] if len(missing) == 1 else ", ".join(missing[:-1]) + " and " + missing[-1]
+    return f"Please tell me {listed}. For example: “Raju ko pachaas rupaye udhaar add karo”."
 
 
 def interpret_command(request: CommandInterpretRequest) -> CommandInterpretResponse:
@@ -145,7 +170,7 @@ def interpret_command(request: CommandInterpretRequest) -> CommandInterpretRespo
             return CommandInterpretResponse(
                 status="clarification",
                 confidence=max(0, min(1, float(confidence))),
-                message="Please clarify the action, exact customer or product, and amount if needed.",
+                message=_missing_details_message(utterance, data.get("entity_text")),
                 provider_used="sarvam",
                 fallback_used=False,
             )
@@ -161,6 +186,13 @@ def interpret_command(request: CommandInterpretRequest) -> CommandInterpretRespo
             return _fallback("I could not safely identify the exact customer or product name. Please rephrase it.", "clarification")
         amount = data.get("amount_text")
         if intent in {"credit", "repayment"}:
+            cue = CREDIT_CUES if intent == "credit" else REPAYMENT_CUES
+            if not cue.search(utterance):
+                return _fallback(
+                    "Please tell me whether it is udhaar (credit given) or jama (payment received). "
+                    "For example: “Raju ko pachaas rupaye udhaar add karo”.",
+                    "clarification",
+                )
             if not _same_literal_span(utterance, amount) or not RUPEE_AMOUNT.fullmatch(amount.strip()):
                 return _fallback("Please state one explicit amount with ₹ or the word rupees.", "clarification")
         elif amount is not None:

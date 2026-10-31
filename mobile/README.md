@@ -115,6 +115,14 @@ Install `@expo/ngrok` if prompted (`npm install -g @expo/ngrok`).
 npm run typecheck
 ```
 
+## Command parser tests
+
+```bash
+npm test
+```
+
+Runs the deterministic Hinglish command parser tests with Node's built-in test runner (no extra dependencies).
+
 ---
 
 ## Environment variables & Phone Demo Connection
