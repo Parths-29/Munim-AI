@@ -39,7 +39,7 @@ export interface CommandInterpretResponse {
   count_text: string | null;
   confidence: number;
   message: string | null;
-  provider_used: 'gemini' | 'fallback';
+  provider_used: 'sarvam' | 'fallback';
   fallback_used: boolean;
 }
 

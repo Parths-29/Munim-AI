@@ -11,7 +11,7 @@ python -m venv .venv
 python -m pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-Keys live only in the ignored root `.env` (template: `.env.example`). `GEMINI_API_KEY` is optional (invoice vision, inward/command assist). `SARVAM_API_KEY` is only needed for live speech. `MONGODB_URI` is unused.
+Keys live only in the ignored root `.env` (template: `.env.example`). `SARVAM_API_KEY` is used for live speech and command interpretation. `SARVAM_COMMAND_MODEL` optionally overrides the default `sarvam-105b-conversations`. `GEMINI_API_KEY` is optional for invoice vision, inward parsing, and the facts explainer. `MONGODB_URI` is unused.
 
 | Variable | Default | Purpose |
 |---|---|---|
