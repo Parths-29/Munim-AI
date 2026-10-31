@@ -125,7 +125,15 @@ def resolve_name(connection, kind: str, text: str) -> tuple[str, list[dict], str
         ("honorific", lambda alias: bool(name_core(text)) and name_core(alias) == name_core(text)),
         ("spoken_variant", lambda alias: bool(spoken_key(text)) and spoken_key(alias) == spoken_key(text)),
     )
-    for how, test in tiers:
+    exact = [item for item in items if any(tiers[0][1](alias) for alias in item["aliases"])]
+    by_core = [item for item in items if any(tiers[1][1](alias) for alias in item["aliases"])]
+    if exact:
+        # An exact alias wins alone only if nobody else shares the same core name ("Raju" vs "Raju chacha").
+        others = sorted((m for m in by_core if m not in exact), key=lambda m: m["name"])
+        if not others:
+            return ("RESOLVED" if len(exact) == 1 else "AMBIGUOUS"), sorted(exact, key=lambda m: m["name"]), "exact"
+        return "AMBIGUOUS", sorted(exact, key=lambda m: m["name"]) + others, "exact"
+    for how, test in tiers[1:]:
         matches = [item for item in items if any(test(alias) for alias in item["aliases"])]
         if matches:
             return ("RESOLVED" if len(matches) == 1 else "AMBIGUOUS"), sorted(matches, key=lambda m: m["name"]), how

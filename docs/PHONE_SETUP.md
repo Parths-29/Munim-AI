@@ -38,6 +38,64 @@ to cut it off. Audio is never stored: the backend returns it, the app plays it (
 that is deleted afterwards). If voice output fails, the text stays and a short error explains why (missing key, quota,
 timeout). Voice requests time out after 25 s.
 
+## Quick start for a phone test (Windows, two terminals)
+
+```powershell
+# 0. Live provider checks (statuses only, never keys)
+cd backend
+python -m scripts.check_gemini      # expect status: ok
+python -m scripts.check_sarvam      # Bulbul speaks a synthetic sentence, then speech-to-text transcribes it
+
+# 1. Find the laptop's Wi-Fi IPv4 (e.g. 192.168.1.42)
+ipconfig
+
+# 2. Terminal A — backend reachable from the phone
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# 3. Check from the laptop that the LAN address answers (replace the IP)
+Test-NetConnection 192.168.1.42 -Port 8000          # TcpTestSucceeded : True
+curl.exe http://192.168.1.42:8000/agent/health
+
+# 4. Terminal B — app; mobile/.env must contain EXPO_PUBLIC_API_BASE_URL=http://192.168.1.42:8000
+cd ..\mobile
+npx expo start --lan -c          # prints the real Expo Go QR (exp://192.168.1.42:8081); press w for web
+```
+
+Scan the QR from the **Expo Go** app (Android) on the same Wi-Fi. This is a development session, not an APK. If the phone
+cannot load the app, Metro is blocked: allow Node.js on Private networks in Windows Firewall or try
+`npx expo start --tunnel`. A tunnel exposes **only Metro**; the backend still needs the LAN address (or its own HTTPS
+tunnel), so `EXPO_PUBLIC_API_BASE_URL` must never be `127.0.0.1` on a phone.
+
+Web preview on the laptop: `http://localhost:8081` (press `w`). For a phone browser, add its origin to
+`MUNIM_CORS_ORIGINS` and use HTTPS for the microphone (section 3).
+
+### Phone test script (Expo Go)
+
+1. Tap the mic → allow microphone → say “Raju ka balance?” → tap mic again. The transcript appears in the box and is
+   **not sent**; edit if needed, then send. Expect the balance as text and voice (Replay/Stop work).
+2. Say “Raju ko paanch sau rupaye udhaar likho” → the card shows customer, ₹500, balance before → after, “NOT SAVED YET”.
+   The voice says nothing is saved. Tap Confirm → “Saved … balance is now …” is spoken only after the backend answers.
+3. Say “Aur 500 add kar do” → inferred customer/action badges; say “nahi, 600” → amount corrected; say “cancel”.
+4. Say “pachs add kro” → choose pachis/pachas. Say “Rajju Sharma naya customer hai, aur uske ₹500 udhaar likho” → one
+   all-or-nothing proposal.
+5. Say “Maggi kitne bache hain?”, then “Do Maggi packet bech diye” → confirm → stock read back.
+6. Failure messages: stop the backend and send a request (clear “Could not reach the backend at …”); turn Wi-Fi off
+   while transcribing (gives up within 45 s with a message).
+
+### Android APK
+
+There is no committed native project (`mobile/android/` is absent; managed Expo), no `eas.json`, and no EAS login, so
+no APK is produced by default. Two ways to build one:
+
+- **EAS (cloud):** `npm i -g eas-cli`, `eas login`, `eas build:configure`, add a profile with
+  `"android": { "buildType": "apk" }`, then `eas build -p android --profile preview`.
+- **Local:** install Android Studio (Android SDK, JDK 17), then in `mobile/`: `npx expo prebuild -p android`,
+  `cd android`, `.\gradlew assembleRelease` (Expo's template signs release with the debug key; `assembleDebug` needs
+  Metro running). Output: `android/app/build/outputs/apk/release/app-release.apk`; checksum with
+  `Get-FileHash <apk> -Algorithm SHA256`.
+
+In an APK the backend address is baked in at build time from `EXPO_PUBLIC_API_BASE_URL`.
+
 ## 1. Web on the same laptop
 
 ```powershell

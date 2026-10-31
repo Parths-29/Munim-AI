@@ -123,6 +123,17 @@ def test_ambiguous_customer_offers_choices(client, shop, make_customer):
     assert picked["status"] == "proposal" and picked["proposal"]["actions"][0]["customer_name"] == "Raju chacha"
 
 
+def test_exact_alias_does_not_hide_another_customer_with_the_same_core_name(client, temp_db, make_customer):
+    raju = make_customer("Raju bhai", ["Raju"])  # explicit alias "Raju"
+    make_customer("Raju chacha")
+    ledger(temp_db, raju["customer_id"], "CREDIT", 10000)
+    data = say(client, "Raju ko 100 rupaye udhaar likho")
+    assert data["status"] == "clarification"
+    assert [c["label"] for c in data["clarification"]["choices"]] == ["Raju bhai", "Raju chacha"]  # exact alias listed first
+    alone = make_customer("Meena ben", ["Meena"])
+    assert say(client, "Meena ka balance?")["answer"]["customer_id"] == alone["customer_id"]  # unique exact alias still resolves
+
+
 def test_pachs_asks_pachas_or_pachis_and_never_converts(client, shop):
     data = say(client, "pachs add kro")
     assert data["status"] == "clarification" and "pachs" in data["message"]
