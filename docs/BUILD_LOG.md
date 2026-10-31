@@ -429,3 +429,10 @@
 - **Server (`command_nlp`):** a Sarvam credit/repayment result now requires an action word for that intent in the utterance (credit vs repayment is never inferred). Clarification messages list the specific missing details. Added synthetic prompt examples for “pachs add kro”, the explicit Hinglish credit form, and amount-without-action.
 - **Checks:** backend `python -m pytest -q tests` → 90 passed (81 + 9 new in `test_command_interpretation.py`), 1 Starlette deprecation warning; `python -m compileall -q app tests scripts seed_demo.py` → exit 0; mobile `tsc --noEmit` → exit 0; mobile `npm test` (new, Node built-in runner, no new dependencies) → 11 passed.
 - **Not verified:** live Sarvam STT/chat on these phrases; on-device voice run.
+
+### 2026-10-31 — Phone voice upload: “Unsupported FormDataPart implementation”
+
+- **Cause:** Expo SDK 58 installs `expo/fetch` as the global `fetch` on Android/iOS (unless `EXPO_PUBLIC_USE_RN_FETCH=1`). Its FormData encoder reads file bytes via `bytes()` and rejects React Native's bare `{ uri, name, type }` part, which `transcribeMerchantAudio` sent on native. Web was unaffected (it already sends a real Blob).
+- **Fix:** the native branch reads the recording with `expo-file-system` `File` and sends a part that has `bytes()` (for expo/fetch) plus `uri` (for React Native fetch), named `merchant-voice.m4a`, type `audio/mp4` (`mobile/src/api/nativeUploadPart.ts`).
+- **Checks:** `mobile/tests/nativeUploadPart.test.mjs` runs Expo's own `convertFormData` from node_modules: the old part reproduces the error, the new part encodes filename/type/bytes. The Expo-encoded body posted to `/speech/transcribe` (Sarvam stubbed) → HTTP 200 as `audio/mp4`. Mobile `npm test` → 14 passed; `tsc --noEmit` → exit 0.
+- **Not verified:** on-device run (the user reports transcription now reaches the server but is slow; not yet investigated).

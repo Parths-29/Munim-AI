@@ -1,4 +1,7 @@
 import { Platform } from 'react-native';
+import { File as ExpoFile } from 'expo-file-system';
+
+import { nativeUploadPart } from '@/api/nativeUploadPart';
 
 /**
  * Comprehensive Typed client for KiranaOS Backend API v0.5
@@ -591,11 +594,11 @@ export async function transcribeMerchantAudio(uri: string): Promise<SpeechTransc
     const normalizedBlob = new Blob([audioBlob], { type: contentType });
     form.append('file', normalizedBlob, `merchant-voice.${extension}`);
   } else {
-    form.append('file', {
-      uri,
-      name: 'merchant-voice.m4a',
-      type: 'audio/mp4',
-    } as unknown as Blob);
+    // Expo Audio records AAC in an .m4a (MPEG-4) container on Android and iOS.
+    // See nativeUploadPart: expo/fetch needs bytes(); a bare { uri } part fails on the phone.
+    const recording = new ExpoFile(uri);
+    if (!recording.exists) throw new Error('The recording file is missing. Please record again.');
+    form.append('file', nativeUploadPart(uri, 'merchant-voice.m4a', 'audio/mp4', () => recording.bytes()) as unknown as Blob);
   }
   const res = await fetch(`${API_BASE_URL}/speech/transcribe`, {
     method: 'POST',
