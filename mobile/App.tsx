@@ -56,8 +56,9 @@ function MainAppShell() {
     }
   };
 
-  // Open Real Munim AI screen (HomeScreen.tsx)
+  // Open Real Munim AI screen (HomeScreen.tsx); the centre mic tab shows as active
   const handleOpenMunimAI = () => {
+    setActiveTab('munim');
     setActiveSubView('munim_ai');
   };
 
@@ -71,11 +72,13 @@ function MainAppShell() {
     setActiveSubView(tab);
   };
 
-  // When on real Munim AI screen, show HomeScreen with a visible Back button
-  if (activeSubView === 'munim_ai') {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar style="dark" />
+  const isMunim = activeSubView === 'munim_ai';
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar style="dark" />
+
+      {isMunim ? (
         <View style={styles.munimNavHeader}>
           <TouchableOpacity
             style={styles.munimBackButton}
@@ -92,27 +95,20 @@ function MainAppShell() {
             <Text style={styles.munimHeaderTagText}>Munim AI Engine</Text>
           </View>
         </View>
-
-        <View style={styles.contentBody}>
-          <HomeScreen />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="dark" />
-
-      {/* Top Paytm Pale-Blue Header */}
-      <PaytmHeader
-        currentPersona={persona}
-        onSelectPersona={setPersona}
-        onOpenSearch={() => setSearchModalVisible(true)}
-      />
+      ) : (
+        /* Top Paytm Pale-Blue Header */
+        <PaytmHeader
+          currentPersona={persona}
+          onSelectPersona={setPersona}
+          onOpenSearch={() => setSearchModalVisible(true)}
+        />
+      )}
 
       {/* Main Screen Content Body */}
       <View style={styles.contentBody}>
+        {/* Real Munim AI screen (voice, transcription, proposals, confirm) — unchanged logic */}
+        {isMunim && <HomeScreen />}
+
         {activeSubView === 'home' && (
           <PaytmHomeScreen
             onOpenMunim={handleOpenMunimAI}

@@ -60,7 +60,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         {/* Tab 3: Center MUNIM Voice Assistant Button */}
         <View style={styles.centerButtonContainer}>
           <TouchableOpacity
-            style={styles.munimCircle}
+            style={[styles.munimCircle, activeTab === 'munim' && styles.munimCircleActive]}
             onPress={onPressMunim}
             activeOpacity={0.85}
             accessibilityRole="button"
@@ -70,7 +70,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               <Ionicons name="mic" size={26} color={colors.navy} />
             </View>
           </TouchableOpacity>
-          <Text style={styles.munimLabel}>Bolo Munim</Text>
+          <Text style={[styles.munimLabel, activeTab === 'munim' && styles.munimLabelActive]}>Bolo Munim</Text>
         </View>
 
         {/* Tab 4: Stock */}
@@ -119,6 +119,14 @@ export const BottomNav: React.FC<BottomNavProps> = ({
 };
 
 const styles = StyleSheet.create({
+  munimCircleActive: {
+    borderWidth: 3,
+    borderColor: colors.navy,
+  },
+  munimLabelActive: {
+    color: colors.navy,
+    fontWeight: '800',
+  },
   navWrapper: {
     backgroundColor: 'transparent',
   },

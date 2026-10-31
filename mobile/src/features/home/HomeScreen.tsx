@@ -64,6 +64,7 @@ import {
 } from '@/api/ledgerClient';
 import { MerchantCommandIntent, parseMerchantCommand } from '@/features/home/parseMerchantCommand';
 import AgentResultCard from '@/features/home/AgentResultCard';
+import { colors as pt, radii as ptRadii, shadows as ptShadows } from '@/theme/theme';
 import { ReplyVoiceBar, useReplyVoice } from '@/features/home/replyVoice';
 import PaymentReviewScreen from '@/features/paymentReview/PaymentReviewScreen';
 import InventoryScreen from '@/features/inventory/InventoryScreen';
@@ -1045,7 +1046,7 @@ export default function HomeScreen() {
           style={[styles.tabItem, activeTab === 'copilot' && styles.tabItemActive]}
           onPress={() => setActiveTab('copilot')}
         >
-          <Ionicons name="chatbox-ellipses-outline" size={16} color={activeTab === 'copilot' ? '#0f3460' : '#6c757d'} />
+          <Ionicons name="chatbox-ellipses-outline" size={16} color={activeTab === 'copilot' ? pt.navy : pt.textSecondary} />
           <Text style={[styles.tabLabel, activeTab === 'copilot' && styles.tabLabelActive]}>Copilot</Text>
         </TouchableOpacity>
 
@@ -1053,7 +1054,7 @@ export default function HomeScreen() {
           style={[styles.tabItem, activeTab === 'payment_review' && styles.tabItemActive]}
           onPress={() => setActiveTab('payment_review')}
         >
-          <Ionicons name="card-outline" size={16} color={activeTab === 'payment_review' ? '#0f3460' : '#6c757d'} />
+          <Ionicons name="card-outline" size={16} color={activeTab === 'payment_review' ? pt.navy : pt.textSecondary} />
           <Text style={[styles.tabLabel, activeTab === 'payment_review' && styles.tabLabelActive]}>Pay Review</Text>
         </TouchableOpacity>
 
@@ -1061,7 +1062,7 @@ export default function HomeScreen() {
           style={[styles.tabItem, activeTab === 'inventory' && styles.tabItemActive]}
           onPress={() => setActiveTab('inventory')}
         >
-          <Ionicons name="cube-outline" size={16} color={activeTab === 'inventory' ? '#0f3460' : '#6c757d'} />
+          <Ionicons name="cube-outline" size={16} color={activeTab === 'inventory' ? pt.navy : pt.textSecondary} />
           <Text style={[styles.tabLabel, activeTab === 'inventory' && styles.tabLabelActive]}>Inventory</Text>
         </TouchableOpacity>
 
@@ -1069,7 +1070,7 @@ export default function HomeScreen() {
           style={[styles.tabItem, activeTab === 'timeline' && styles.tabItemActive]}
           onPress={() => setActiveTab('timeline')}
         >
-          <Ionicons name="time-outline" size={16} color={activeTab === 'timeline' ? '#0f3460' : '#6c757d'} />
+          <Ionicons name="time-outline" size={16} color={activeTab === 'timeline' ? pt.navy : pt.textSecondary} />
           <Text style={[styles.tabLabel, activeTab === 'timeline' && styles.tabLabelActive]}>Timeline</Text>
         </TouchableOpacity>
 
@@ -1077,7 +1078,7 @@ export default function HomeScreen() {
           style={[styles.tabItem, activeTab === 'insights' && styles.tabItemActive]}
           onPress={() => setActiveTab('insights')}
         >
-          <Ionicons name="bar-chart-outline" size={16} color={activeTab === 'insights' ? '#0f3460' : '#6c757d'} />
+          <Ionicons name="bar-chart-outline" size={16} color={activeTab === 'insights' ? pt.navy : pt.textSecondary} />
           <Text style={[styles.tabLabel, activeTab === 'insights' && styles.tabLabelActive]}>Insights</Text>
         </TouchableOpacity>
       </View>
@@ -1105,7 +1106,7 @@ export default function HomeScreen() {
                   onPress={() => handlePromptPress(prompt)}
                 >
                   {prompt.includes('Aaj kaisa raha') && (
-                    <Ionicons name="sparkles" size={13} color="#ffffff" style={{ marginRight: 4 }} />
+                    <Ionicons name="sparkles" size={13} color={pt.surface} style={{ marginRight: 4 }} />
                   )}
                   <Text style={[styles.chipText, prompt.includes('Aaj kaisa raha') && styles.insightChipText]}>
                     {prompt}
@@ -1114,7 +1115,7 @@ export default function HomeScreen() {
               ))}
             </View>
 
-            {loading && <ActivityIndicator size="small" color="#0f3460" style={{ marginVertical: 8 }} />}
+            {loading && <ActivityIndicator size="small" color={pt.navy} style={{ marginVertical: 8 }} />}
 
             {commandFeedback && (
               <View style={[
@@ -1306,11 +1307,11 @@ export default function HomeScreen() {
               <View style={styles.briefCard}>
                 <View style={styles.briefHeader}>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Ionicons name="bar-chart" size={18} color="#0f3460" style={{ marginRight: 6 }} />
+                    <Ionicons name="bar-chart" size={18} color={pt.navy} style={{ marginRight: 6 }} />
                     <Text style={styles.briefTitle}>Business Brief · Kirana Persona</Text>
                   </View>
                   <TouchableOpacity onPress={() => { setInsightsBrief(null); setAiExplanation(null); }}>
-                    <Ionicons name="close-circle-outline" size={20} color="#6c757d" />
+                    <Ionicons name="close-circle-outline" size={20} color={pt.textSecondary} />
                   </TouchableOpacity>
                 </View>
 
@@ -1326,7 +1327,7 @@ export default function HomeScreen() {
                   <View style={styles.aiExplanationCard}>
                     <View style={styles.aiExplanationHeader}>
                       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Ionicons name="sparkles" size={14} color="#0f3460" style={{ marginRight: 4 }} />
+                        <Ionicons name="sparkles" size={14} color={pt.navy} style={{ marginRight: 4 }} />
                         <Text style={styles.aiExplanationTitle}>
                           {aiExplanation.fallback_used ? 'Summary (Deterministic)' : 'AI Summary (Facts-Only)'}
                         </Text>
@@ -1441,7 +1442,7 @@ export default function HomeScreen() {
 
                   {mockAction ? (
                     <View style={styles.approvedBanner}>
-                      <Ionicons name="checkmark-done-circle" size={18} color="#155724" style={{ marginRight: 6 }} />
+                      <Ionicons name="checkmark-done-circle" size={18} color={pt.jamaGreen} style={{ marginRight: 6 }} />
                       <Text style={styles.approvedBannerText}>
                         Saved as merchant-approved (mock only). Nothing was published or sent.
                       </Text>
@@ -1452,8 +1453,8 @@ export default function HomeScreen() {
                       onPress={handleApproveMockAction}
                       disabled={loading || !mockActionDraft.trim()}
                     >
-                      {loading ? <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 6 }} /> :
-                        <Ionicons name="hand-right-outline" size={16} color="#ffffff" style={{ marginRight: 6 }} />}
+                      {loading ? <ActivityIndicator size="small" color={pt.surface} style={{ marginRight: 6 }} /> :
+                        <Ionicons name="hand-right-outline" size={16} color={pt.surface} style={{ marginRight: 6 }} />}
                       <Text style={styles.approveBtnText}>Approve & Track for 7 Days (Mock)</Text>
                     </TouchableOpacity>
                   )}
@@ -1502,7 +1503,7 @@ export default function HomeScreen() {
                   onPress={handleCheckRajuBalance}
                   disabled={loading}
                 >
-                  <Ionicons name="wallet-outline" size={14} color="#0f3460" style={{ marginRight: 4 }} />
+                  <Ionicons name="wallet-outline" size={14} color={pt.navy} style={{ marginRight: 4 }} />
                   <Text style={styles.quickActionText}>Check Balance</Text>
                 </TouchableOpacity>
 
@@ -1511,8 +1512,8 @@ export default function HomeScreen() {
                   onPress={handleQuickCredit}
                   disabled={loading}
                 >
-                  <Ionicons name="add-circle-outline" size={14} color="#dc3545" style={{ marginRight: 4 }} />
-                  <Text style={[styles.quickActionText, { color: '#dc3545' }]}>+₹50 Udhaar</Text>
+                  <Ionicons name="add-circle-outline" size={14} color={pt.udhaarRed} style={{ marginRight: 4 }} />
+                  <Text style={[styles.quickActionText, { color: pt.udhaarRed }]}>+₹50 Udhaar</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -1520,8 +1521,8 @@ export default function HomeScreen() {
                   onPress={handleQuickRepayment}
                   disabled={loading}
                 >
-                  <Ionicons name="checkmark-circle-outline" size={14} color="#28a745" style={{ marginRight: 4 }} />
-                  <Text style={[styles.quickActionText, { color: '#28a745' }]}>-₹300 Jamma</Text>
+                  <Ionicons name="checkmark-circle-outline" size={14} color={pt.jamaGreen} style={{ marginRight: 4 }} />
+                  <Text style={[styles.quickActionText, { color: pt.jamaGreen }]}>-₹300 Jamma</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1550,8 +1551,8 @@ export default function HomeScreen() {
                 disabled={loading || voiceBusy}
                 accessibilityLabel={recorderState.isRecording ? 'Stop voice recording' : 'Start voice recording'}
               >
-                {voiceBusy ? <ActivityIndicator size="small" color="#0f3460" /> :
-                  <Ionicons name={recorderState.isRecording ? 'stop' : 'mic-outline'} size={19} color={recorderState.isRecording ? '#ffffff' : '#0f3460'} />}
+                {voiceBusy ? <ActivityIndicator size="small" color={pt.navy} /> :
+                  <Ionicons name={recorderState.isRecording ? 'stop' : 'mic-outline'} size={19} color={recorderState.isRecording ? pt.surface : pt.navy} />}
               </TouchableOpacity>
               <TextInput
               style={styles.textInput}
@@ -1559,7 +1560,7 @@ export default function HomeScreen() {
               onChangeText={(value) => { setInput(value); setInputSourceChannel('text'); }}
               editable={!loading && !voiceBusy}
               placeholder="Try udhaar, jama, balance, or 'Aaj kaisa raha?'"
-              placeholderTextColor="#9aa0a6"
+              placeholderTextColor={pt.textMuted}
               returnKeyType="send"
               onSubmitEditing={handleSubmitText}
             />
@@ -1568,7 +1569,7 @@ export default function HomeScreen() {
               onPress={handleSubmitText}
               disabled={!input.trim() || loading || voiceBusy}
             >
-              <Ionicons name="send" size={18} color="#ffffff" />
+              <Ionicons name="send" size={18} color={pt.surface} />
             </TouchableOpacity>
             </View>
           </View>
@@ -1579,7 +1580,7 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#ffffff' },
+  safe: { flex: 1, backgroundColor: pt.background },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1587,25 +1588,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#dee2e6',
-    backgroundColor: '#ffffff',
+    borderBottomColor: pt.border,
+    backgroundColor: pt.surface,
   },
-  appName: { fontSize: 22, fontWeight: '800', color: '#0f3460' },
-  tagline: { fontSize: 11, color: '#6c757d' },
+  appName: { fontSize: 22, fontWeight: '800', color: pt.navy },
+  tagline: { fontSize: 11, color: pt.textSecondary },
   syntheticBadge: {
-    backgroundColor: '#fff3cd',
+    backgroundColor: pt.warningSurface,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: '#ffc107',
+    borderColor: pt.warning,
   },
-  syntheticBadgeText: { fontSize: 10, fontWeight: '700', color: '#856404' },
+  syntheticBadgeText: { fontSize: 10, fontWeight: '700', color: pt.warning },
   tabBar: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: '#dee2e6',
-    backgroundColor: '#f8f9fa',
+    borderBottomColor: pt.border,
+    backgroundColor: pt.surface,
   },
   tabItem: {
     flex: 1,
@@ -1614,19 +1615,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabItemActive: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#0f3460',
-    backgroundColor: '#ffffff',
+    borderBottomWidth: 3,
+    borderBottomColor: pt.primaryCyan,
+    backgroundColor: pt.paleBlue,
   },
-  tabLabel: { fontSize: 10, color: '#6c757d', marginTop: 2, fontWeight: '500' },
-  tabLabelActive: { color: '#0f3460', fontWeight: '700' },
-  copilotContainer: { flex: 1, backgroundColor: '#f8f9fa' },
+  tabLabel: { fontSize: 10, color: pt.textSecondary, marginTop: 2, fontWeight: '500' },
+  tabLabelActive: { color: pt.navy, fontWeight: '700' },
+  copilotContainer: { flex: 1, backgroundColor: pt.background },
   scrollView: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 16 },
   sectionLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#6c757d',
+    color: pt.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 8,
@@ -1635,29 +1636,29 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: pt.surface,
     borderWidth: 1,
-    borderColor: '#0f3460',
-    borderRadius: 20,
+    borderColor: pt.border,
+    borderRadius: ptRadii.pill,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
   },
-  chipText: { fontSize: 12, color: '#0f3460' },
+  chipText: { fontSize: 12, color: pt.navy, fontWeight: '600' },
   insightChip: {
-    backgroundColor: '#0f3460',
-    borderColor: '#0f3460',
+    backgroundColor: pt.primaryCyan,
+    borderColor: pt.primaryCyan,
   },
-  insightChipText: { color: '#ffffff', fontWeight: '700' },
+  insightChipText: { color: pt.surface, fontWeight: '700' },
 
   // ── "Aaj kaisa raha?" Brief Card
   briefCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
+    backgroundColor: pt.surface,
+    borderRadius: ptRadii.cardSmall,
     padding: 16,
     marginBottom: 16,
     borderWidth: 2,
-    borderColor: '#0f3460',
-    elevation: 3,
+    borderColor: pt.primaryCyan,
+    ...ptShadows.medium,
   },
   briefHeader: {
     flexDirection: 'row',
@@ -1665,25 +1666,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  briefTitle: { fontSize: 16, fontWeight: '800', color: '#0f3460' },
+  briefTitle: { fontSize: 16, fontWeight: '800', color: pt.navy },
   briefSyntheticBanner: {
-    backgroundColor: '#fff3cd',
+    backgroundColor: pt.warningSurface,
     padding: 8,
     borderRadius: 6,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#ffc107',
+    borderColor: pt.warning,
   },
-  briefSyntheticText: { fontSize: 11, fontWeight: '700', color: '#856404', textAlign: 'center' },
+  briefSyntheticText: { fontSize: 11, fontWeight: '700', color: pt.warning, textAlign: 'center' },
 
   // ── AI Explanation Card
   aiExplanationCard: {
-    backgroundColor: '#e8f4fd',
+    backgroundColor: pt.paleBlue,
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#b6d4fe',
+    borderColor: '#BAE6FD',
   },
   aiExplanationHeader: {
     flexDirection: 'row',
@@ -1691,15 +1692,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 6,
   },
-  aiExplanationTitle: { fontSize: 13, fontWeight: '700', color: '#0f3460' },
-  aiExplanationText: { fontSize: 13, color: '#212529', lineHeight: 19, marginBottom: 8 },
+  aiExplanationTitle: { fontSize: 13, fontWeight: '700', color: pt.navy },
+  aiExplanationText: { fontSize: 13, color: pt.textMain, lineHeight: 19, marginBottom: 8 },
   fallbackBadge: {
-    backgroundColor: '#e2e3e5',
+    backgroundColor: pt.borderSubtle,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
-  fallbackBadgeText: { fontSize: 9, fontWeight: '700', color: '#383d41' },
+  fallbackBadgeText: { fontSize: 9, fontWeight: '700', color: pt.textMain },
   evidenceRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1707,60 +1708,61 @@ const styles = StyleSheet.create({
     gap: 4,
     marginBottom: 4,
   },
-  evidenceLabel: { fontSize: 10, fontWeight: '700', color: '#495057' },
+  evidenceLabel: { fontSize: 10, fontWeight: '700', color: pt.textSecondary },
   evidenceTag: {
-    backgroundColor: '#cfe2ff',
+    backgroundColor: pt.paleBlue,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
-  evidenceTagText: { fontSize: 9, fontWeight: '600', color: '#084298' },
+  evidenceTagText: { fontSize: 9, fontWeight: '600', color: pt.deepCyan },
   validationErrorBox: {
-    backgroundColor: '#fff3cd',
+    backgroundColor: pt.warningSurface,
     padding: 6,
     borderRadius: 4,
     marginTop: 4,
   },
-  validationErrorTitle: { fontSize: 10, fontWeight: '700', color: '#856404' },
-  validationErrorItem: { fontSize: 10, color: '#856404' },
+  validationErrorTitle: { fontSize: 10, fontWeight: '700', color: pt.warning },
+  validationErrorItem: { fontSize: 10, color: pt.warning },
 
   periodBox: {
-    backgroundColor: '#e8f0fe',
+    backgroundColor: pt.paleBlue,
     padding: 8,
     borderRadius: 6,
     marginBottom: 10,
   },
-  periodTitle: { fontSize: 11, fontWeight: '700', color: '#0f3460' },
-  periodText: { fontSize: 12, color: '#0f3460', fontFamily: 'monospace', marginTop: 2 },
-  periodSub: { fontSize: 10, color: '#6c757d', fontStyle: 'italic', marginTop: 2 },
-  factsTitle: { fontSize: 12, fontWeight: '700', color: '#495057', marginBottom: 6 },
+  periodTitle: { fontSize: 11, fontWeight: '700', color: pt.navy },
+  periodText: { fontSize: 12, color: pt.navy, fontFamily: 'monospace', marginTop: 2 },
+  periodSub: { fontSize: 10, color: pt.textSecondary, fontStyle: 'italic', marginTop: 2 },
+  factsTitle: { fontSize: 12, fontWeight: '700', color: pt.textSecondary, marginBottom: 6 },
   factRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 6,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f3f5',
+    borderBottomColor: pt.surfaceSubtle,
   },
-  factLabel: { fontSize: 13, fontWeight: '600', color: '#212529' },
-  factMeta: { fontSize: 10, color: '#9aa0a6' },
-  factValue: { fontSize: 15, fontWeight: '800', color: '#0f3460' },
-  comparisonText: { fontSize: 11, color: '#6c757d' },
+  factLabel: { fontSize: 13, fontWeight: '600', color: pt.textMain },
+  factMeta: { fontSize: 10, color: pt.textMuted },
+  factValue: { fontSize: 15, fontWeight: '800', color: pt.navy },
+  comparisonText: { fontSize: 11, color: pt.textSecondary },
   briefCaveatsBox: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: pt.background,
     padding: 10,
     borderRadius: 6,
     marginTop: 10,
     marginBottom: 12,
   },
-  briefCaveatsTitle: { fontSize: 11, fontWeight: '700', color: '#495057', marginBottom: 4 },
-  briefCaveatItem: { fontSize: 11, color: '#6c757d', lineHeight: 15, marginBottom: 2 },
+  briefCaveatsTitle: { fontSize: 11, fontWeight: '700', color: pt.textSecondary, marginBottom: 4 },
+  briefCaveatItem: { fontSize: 11, color: pt.textSecondary, lineHeight: 15, marginBottom: 2 },
   mockActionCard: {
-    backgroundColor: '#fbfbfb',
+    backgroundColor: pt.surfaceSubtle,
     borderWidth: 1,
-    borderColor: '#ced4da',
-    borderRadius: 6,
+    borderColor: pt.border,
+    borderRadius: ptRadii.cardSmall,
     padding: 12,
+    ...ptShadows.subtle,
   },
   mockActionHeader: {
     flexDirection: 'row',
@@ -1768,74 +1770,75 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 4,
   },
-  mockActionTitle: { fontSize: 13, fontWeight: '700', color: '#0f3460' },
-  mockBadge: { backgroundColor: '#e2e3e5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  mockBadgeText: { fontSize: 9, fontWeight: '700', color: '#383d41' },
-  mockActionDesc: { fontSize: 11, color: '#6c757d', marginBottom: 6 },
-  actionDraftLabel: { fontSize: 11, fontWeight: '700', color: '#495057', marginBottom: 4 },
+  mockActionTitle: { fontSize: 13, fontWeight: '700', color: pt.navy },
+  mockBadge: { backgroundColor: pt.borderSubtle, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  mockBadgeText: { fontSize: 9, fontWeight: '700', color: pt.textMain },
+  mockActionDesc: { fontSize: 11, color: pt.textSecondary, marginBottom: 6 },
+  actionDraftLabel: { fontSize: 11, fontWeight: '700', color: pt.textSecondary, marginBottom: 4 },
   actionDraftInput: {
     minHeight: 64,
     borderWidth: 1,
-    borderColor: '#adb5bd',
+    borderColor: pt.textMuted,
     borderRadius: 6,
     padding: 9,
-    backgroundColor: '#ffffff',
-    color: '#212529',
+    backgroundColor: pt.surface,
+    color: pt.textMain,
     fontSize: 12,
     lineHeight: 17,
     textAlignVertical: 'top',
   },
-  actionDraftCount: { fontSize: 10, color: '#6c757d', textAlign: 'right', marginTop: 3, marginBottom: 6 },
+  actionDraftCount: { fontSize: 10, color: pt.textSecondary, textAlign: 'right', marginTop: 3, marginBottom: 6 },
   actionTypeBadge: {
-    backgroundColor: '#d1ecf1',
+    backgroundColor: pt.paleBlue,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 4,
     alignSelf: 'flex-start',
     marginBottom: 8,
   },
-  actionTypeBadgeText: { fontSize: 10, fontWeight: '600', color: '#0c5460' },
+  actionTypeBadgeText: { fontSize: 10, fontWeight: '600', color: pt.deepCyan },
   approveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0f3460',
+    backgroundColor: pt.navy,
     paddingVertical: 8,
     borderRadius: 4,
   },
-  approveBtnText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
+  approveBtnText: { color: pt.surface, fontSize: 12, fontWeight: '700' },
   approvedBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#d4edda',
+    backgroundColor: pt.successSurface,
     padding: 8,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: '#c3e6cb',
+    borderColor: '#BFE8CB',
   },
-  approvedBannerText: { fontSize: 11, fontWeight: '700', color: '#155724', flex: 1 },
+  approvedBannerText: { fontSize: 11, fontWeight: '700', color: pt.jamaGreen, flex: 1 },
   outcomeCard: {
     marginTop: 10,
     padding: 10,
-    borderRadius: 6,
-    backgroundColor: '#f1f6f8',
+    borderRadius: ptRadii.cardSmall,
+    backgroundColor: pt.surfaceSubtle,
     borderWidth: 1,
-    borderColor: '#c8dce3',
+    borderColor: '#BAE6FD',
+    ...ptShadows.subtle,
   },
-  outcomeTitle: { fontSize: 12, fontWeight: '800', color: '#0f3460', marginBottom: 4 },
-  outcomeText: { fontSize: 11, color: '#34495e', lineHeight: 16, marginBottom: 5 },
-  outcomeMeta: { fontSize: 10, color: '#495057', marginTop: 3 },
-  outcomeDisclaimer: { fontSize: 10, color: '#856404', fontWeight: '600', marginTop: 6 },
+  outcomeTitle: { fontSize: 12, fontWeight: '800', color: pt.navy, marginBottom: 4 },
+  outcomeText: { fontSize: 11, color: pt.textMain, lineHeight: 16, marginBottom: 5 },
+  outcomeMeta: { fontSize: 10, color: pt.textSecondary, marginTop: 3 },
+  outcomeDisclaimer: { fontSize: 10, color: pt.warning, fontWeight: '600', marginTop: 6 },
 
   // Customer Card
   customerCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
+    backgroundColor: pt.surface,
+    borderRadius: ptRadii.cardSmall,
     padding: 14,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#dee2e6',
-    elevation: 1,
+    borderColor: pt.border,
+    ...ptShadows.subtle,
   },
   customerCardHeader: {
     flexDirection: 'row',
@@ -1843,49 +1846,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-  customerCardTitle: { fontSize: 16, fontWeight: '700', color: '#0f3460' },
-  customerCardSub: { fontSize: 11, color: '#6c757d', marginTop: 1 },
+  customerCardTitle: { fontSize: 16, fontWeight: '700', color: pt.navy },
+  customerCardSub: { fontSize: 11, color: pt.textSecondary, marginTop: 1 },
   balanceTag: {
-    backgroundColor: '#fff3cd',
+    backgroundColor: pt.warningSurface,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
     alignItems: 'flex-end',
   },
-  balanceLabel: { fontSize: 10, color: '#856404', fontWeight: '600' },
-  balanceAmount: { fontSize: 16, fontWeight: '800', color: '#856404' },
+  balanceLabel: { fontSize: 10, color: pt.warning, fontWeight: '600' },
+  balanceAmount: { fontSize: 16, fontWeight: '800', color: pt.warning },
   quickActionRow: { flexDirection: 'row', gap: 6 },
   quickActionBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#e8f0fe',
+    backgroundColor: pt.paleBlue,
     paddingVertical: 8,
     borderRadius: 6,
   },
-  creditBtn: { backgroundColor: '#fff5f5' },
-  repayBtn: { backgroundColor: '#eef9f0' },
-  quickActionText: { fontSize: 12, fontWeight: '600', color: '#0f3460' },
+  creditBtn: { backgroundColor: pt.errorSurface },
+  repayBtn: { backgroundColor: pt.successSurface },
+  quickActionText: { fontSize: 12, fontWeight: '600', color: pt.navy },
   commandFeedback: {
-    borderRadius: 8,
+    borderRadius: ptRadii.cardSmall,
     borderWidth: 1,
     padding: 12,
     marginBottom: 10,
   },
-  commandFeedback_info: { backgroundColor: '#e8f0fe', borderColor: '#b6ccf2' },
-  commandFeedback_success: { backgroundColor: '#eef9f0', borderColor: '#b8dfbf' },
-  commandFeedback_error: { backgroundColor: '#fff1f0', borderColor: '#f3b9b4' },
-  commandFeedbackTitle: { fontSize: 13, fontWeight: '700', color: '#17324d', marginBottom: 3 },
-  commandFeedbackText: { fontSize: 12, color: '#3c4856', lineHeight: 18 },
+  commandFeedback_info: { backgroundColor: pt.paleBlue, borderColor: '#BAE6FD' },
+  commandFeedback_success: { backgroundColor: pt.successSurface, borderColor: '#BFE8CB' },
+  commandFeedback_error: { backgroundColor: pt.errorSurface, borderColor: '#F5C2C5' },
+  commandFeedbackTitle: { fontSize: 13, fontWeight: '700', color: pt.navy, marginBottom: 3 },
+  commandFeedbackText: { fontSize: 12, color: pt.textMain, lineHeight: 18 },
   commandPreviewCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
+    backgroundColor: pt.surface,
+    borderRadius: ptRadii.cardSmall,
     borderWidth: 2,
-    borderColor: '#0f3460',
+    borderColor: pt.primaryCyan,
     padding: 14,
     marginBottom: 12,
-    elevation: 2,
+    ...ptShadows.subtle,
   },
   commandPreviewHeader: {
     flexDirection: 'row',
@@ -1893,65 +1896,66 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  commandPreviewTitle: { fontSize: 15, fontWeight: '800', color: '#0f3460' },
+  commandPreviewTitle: { fontSize: 15, fontWeight: '800', color: pt.navy },
   commandNotSavedBadge: {
-    backgroundColor: '#fff3cd',
+    backgroundColor: pt.warningSurface,
     borderRadius: 4,
     paddingHorizontal: 7,
     paddingVertical: 3,
   },
-  commandNotSavedText: { color: '#856404', fontSize: 9, fontWeight: '800' },
-  commandPreviewText: { color: '#343a40', fontSize: 13, lineHeight: 19, marginBottom: 4 },
-  commandPreviewAmount: { color: '#0f3460', fontSize: 18, fontWeight: '800', marginVertical: 5 },
-  commandPreviewNote: { color: '#856404', fontSize: 11, lineHeight: 16, marginTop: 5 },
-  commandBlockedText: { color: '#a61b1b', fontSize: 12, fontWeight: '600', marginTop: 5 },
+  commandNotSavedText: { color: pt.warning, fontSize: 9, fontWeight: '800' },
+  commandPreviewText: { color: pt.textMain, fontSize: 13, lineHeight: 19, marginBottom: 4 },
+  commandPreviewAmount: { color: pt.navy, fontSize: 18, fontWeight: '800', marginVertical: 5 },
+  commandPreviewNote: { color: pt.warning, fontSize: 11, lineHeight: 16, marginTop: 5 },
+  commandBlockedText: { color: pt.udhaarRed, fontSize: 12, fontWeight: '600', marginTop: 5 },
   commandMatchButton: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: pt.background,
     borderWidth: 1,
-    borderColor: '#d7dde5',
+    borderColor: pt.border,
     borderRadius: 6,
     padding: 10,
     marginTop: 7,
   },
-  commandMatchName: { color: '#0f3460', fontSize: 13, fontWeight: '700' },
-  commandMatchId: { color: '#6c757d', fontSize: 10, marginTop: 2 },
+  commandMatchName: { color: pt.navy, fontSize: 13, fontWeight: '700' },
+  commandMatchId: { color: pt.textSecondary, fontSize: 10, marginTop: 2 },
   commandButtonRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
   commandCancelButton: {
-    backgroundColor: '#f1f3f5',
+    backgroundColor: pt.surfaceSubtle,
     borderRadius: 6,
     paddingVertical: 10,
     alignItems: 'center',
     flex: 1,
   },
-  commandCancelText: { color: '#495057', fontSize: 12, fontWeight: '700' },
+  commandCancelText: { color: pt.textSecondary, fontSize: 12, fontWeight: '700' },
   commandConfirmButton: {
-    backgroundColor: '#0f3460',
+    backgroundColor: pt.navy,
     borderRadius: 6,
     paddingVertical: 10,
     alignItems: 'center',
     flex: 2,
   },
-  commandConfirmDisabled: { backgroundColor: '#adb5bd' },
-  commandConfirmText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
+  commandConfirmDisabled: { backgroundColor: pt.textMuted },
+  commandConfirmText: { color: pt.surface, fontSize: 12, fontWeight: '700' },
   historyCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 6,
+    backgroundColor: pt.surface,
+    borderRadius: ptRadii.cardSmall,
     padding: 10,
     marginBottom: 8,
     borderLeftWidth: 3,
-    borderLeftColor: '#0f3460',
+    borderLeftColor: pt.navy,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    ...ptShadows.subtle,
   },
-  historyText: { fontSize: 13, color: '#212529', flex: 1 },
-  historyTime: { fontSize: 11, color: '#9aa0a6', marginLeft: 8 },
+  historyText: { fontSize: 13, color: pt.textMain, flex: 1 },
+  historyTime: { fontSize: 11, color: pt.textMuted, marginLeft: 8 },
   inputBar: {
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderTopWidth: 1,
-    borderTopColor: '#dee2e6',
-    backgroundColor: '#ffffff',
+    borderTopColor: pt.border,
+    backgroundColor: pt.surface,
   },
   inputRow: {
     flexDirection: 'row',
@@ -1959,42 +1963,47 @@ const styles = StyleSheet.create({
   },
   voiceNotice: {
     fontSize: 10,
-    color: '#495057',
+    color: pt.textSecondary,
     lineHeight: 14,
     marginBottom: 5,
     paddingHorizontal: 3,
   },
   micBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#e8f0fe',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: pt.paleBlue,
+    borderWidth: 2,
+    borderColor: pt.primaryCyan,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 8,
   },
   micBtnActive: {
-    backgroundColor: '#dc3545',
+    backgroundColor: pt.navy,
+    borderColor: pt.primaryCyan,
+    ...ptShadows.cyanGlow,
   },
   textInput: {
     flex: 1,
-    height: 40,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 20,
+    height: 42,
+    backgroundColor: pt.surface,
+    borderRadius: ptRadii.input,
     paddingHorizontal: 14,
-    fontSize: 13,
-    color: '#212529',
+    fontSize: 14,
+    color: pt.textMain,
     borderWidth: 1,
-    borderColor: '#dee2e6',
+    borderColor: pt.border,
     marginRight: 8,
   },
   sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#0f3460',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: pt.primaryCyan,
     justifyContent: 'center',
     alignItems: 'center',
+    ...ptShadows.cyanGlow,
   },
-  sendBtnDisabled: { backgroundColor: '#adb5bd' },
+  sendBtnDisabled: { backgroundColor: pt.textMuted },
 });
