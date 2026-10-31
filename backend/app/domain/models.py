@@ -300,6 +300,8 @@ class PaymentIntakeCreate(StrictModel):
     occurred_at: datetime
     idempotency_key: str = Field(min_length=8, max_length=150)
     payer_token: str | None = Field(default=None, max_length=100)
+    # N8: the tr= reference from a Munim UPI pay link, when the payment came through one.
+    payment_reference: str | None = Field(default=None, min_length=4, max_length=35, pattern=r"^[A-Za-z0-9-]+$")
     source: Literal["provider_mock"] = "provider_mock"
 
 
@@ -312,6 +314,9 @@ class PaymentIntakeView(StrictModel):
     allocation_entry_id: str | None
     created_at: datetime
     idempotent_replay: bool = False
+    payment_reference: str | None = None
+    collection_request_id: str | None = None
+    matched_by: Literal["payment_reference", "payer_token"] | None = None
 
 
 class PaymentReviewView(StrictModel):
@@ -322,6 +327,7 @@ class PaymentReviewView(StrictModel):
     reason: str | None
     occurred_at: datetime
     created_at: datetime
+    payment_reference: str | None = None
 
 
 class PaymentAllocationCreate(StrictModel):

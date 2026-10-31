@@ -386,6 +386,51 @@ CREATE INDEX IF NOT EXISTS ix_agent_turns_shop_time ON agent_turns(shop_id, crea
 """ + _append_only("agent_turns", "agent turns")
 
 
+RECOVERY = """
+-- Merchant-chosen language for a customer's reminders (en-IN when unset).
+CREATE TABLE IF NOT EXISTS customer_preferences (
+    shop_id TEXT NOT NULL,
+    customer_id TEXT NOT NULL,
+    language_code TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (shop_id, customer_id)
+);
+
+-- The shop's own UPI ID, used only to build pay links the customer opens themselves.
+CREATE TABLE IF NOT EXISTS shop_payment_profiles (
+    shop_id TEXT PRIMARY KEY,
+    upi_vpa TEXT NOT NULL,
+    payee_name TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- One per approved reminder that carries a UPI link. The reference travels in the link (tr=)
+-- and comes back on the payment event, so the payment can be matched to the customer.
+CREATE TABLE IF NOT EXISTS collection_requests (
+    request_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    customer_id TEXT NOT NULL,
+    reminder_id TEXT REFERENCES reminders(reminder_id),
+    reference TEXT NOT NULL UNIQUE,
+    amount_paise INTEGER CHECK (amount_paise IS NULL OR amount_paise > 0),
+    balance_at_request_paise INTEGER NOT NULL,
+    upi_vpa TEXT NOT NULL,
+    payee_name TEXT NOT NULL,
+    upi_link TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_collection_requests_customer ON collection_requests(shop_id, customer_id, created_at);
+
+-- Additive columns; existing rows stay NULL.
+ALTER TABLE payment_events ADD COLUMN payment_reference TEXT;
+ALTER TABLE payment_events ADD COLUMN collection_request_id TEXT;
+ALTER TABLE reminder_transitions ADD COLUMN language_code TEXT;
+
+CREATE INDEX IF NOT EXISTS ix_payment_events_collection ON payment_events(shop_id, collection_request_id);
+""" + _append_only("collection_requests", "collection requests")
+
+
 def _baseline() -> str:
     from app.services.database import SCHEMA
 
@@ -401,6 +446,7 @@ MIGRATIONS: list[tuple[int, str, object]] = [
     (5, "bahi_khata_ledger_pages", LEDGER_PAGES),
     (6, "inventory_profiles_and_outflows", INVENTORY_V2),
     (7, "voice_agent_sessions", VOICE_AGENT),
+    (8, "recovery_concierge", RECOVERY),
 ]
 
 

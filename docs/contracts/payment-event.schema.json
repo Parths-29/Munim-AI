@@ -17,6 +17,7 @@
     "source": {"const": "provider_mock"},
     "idempotency_key": {"type": "string", "minLength": 8, "maxLength": 150},
     "payer_token": {"type": ["string", "null"], "maxLength": 100},
-    "reference_token": {"type": ["string", "null"], "maxLength": 120}
+    "reference_token": {"type": ["string", "null"], "maxLength": 120},
+    "payment_reference": {"type": ["string", "null"], "pattern": "^[A-Za-z0-9-]{4,35}$", "description": "The tr= reference from a Munim UPI pay link (N8); matches the payment to a collection request."}
   }
 }

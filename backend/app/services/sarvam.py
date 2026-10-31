@@ -49,6 +49,13 @@ def _numbers(text: str) -> list[str]:
     return sorted(n.replace(",", "") for n in NUMBER.findall(text))
 
 
+def numbers_match(source: str, candidate: str) -> bool:
+    """True when both texts carry exactly the same numbers (Indic digits are read as ASCII)."""
+    from app.services.units import ascii_digits
+
+    return _numbers(ascii_digits(source)) == _numbers(ascii_digits(candidate))
+
+
 def _post(url: str, payload: dict, timeout: float) -> dict:
     request = urllib.request.Request(
         url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),

@@ -118,6 +118,9 @@ class ReminderView(StrictModel):
     eligibility_reason: str
     message_preview: str
     include_amount: bool
+    language_code: str = "en-IN"
+    payment_reference: str | None = None
+    collection_request_id: str | None = None
     mock_only: Literal[True] = True
     delivered_to_real_recipient: Literal[False] = False
     created_at: datetime
@@ -135,6 +138,10 @@ class ReminderApprove(StrictModel):
     confirmed: bool
     include_amount: bool = False
     idempotency_key: str = Field(min_length=8, max_length=150)
+    # N8: approve the exact localized text the merchant reviewed (from GET /customers/{id}/recovery-brief).
+    language_code: str | None = Field(default=None, min_length=5, max_length=5)
+    localized_message: str | None = Field(default=None, min_length=1, max_length=1200)
+    include_payment_link: bool = False
 
 
 class ReminderAction(StrictModel):

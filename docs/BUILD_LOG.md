@@ -411,3 +411,13 @@
 - **Checks (fresh Python 3.10.12 venv, `pip install -r requirements-dev.txt`):** `python -m pytest --collect-only -q tests` → 81 collected; `python -m pytest -q tests` → 81 passed, 1 warning (Starlette deprecation of `httpx` in TestClient); `python -m compileall -q app tests scripts seed_demo.py` → exit 0; mobile `tsc --noEmit` (TypeScript 5.7.3) → exit 0.
 - **Review note:** b2cf96c (already on this branch) touches `mobile/`: it replaces four 1×1 PNGs that had bad IDAT CRCs (the static-export blocker noted above) with solid-colour placeholders and removes a duplicated demo prompt that caused a duplicate React key. These are repairs, not UI redesign, but they fall outside the backend-only rule in `NEXT_PHASES_BACKEND_FIRST_PRD.md` and need explicit reviewer sign-off.
 - **Not verified:** live Sarvam translate/TTS; Expo static export with the new assets.
+
+### 2026-10-31 — Growth phase N8 (slice 1): recovery concierge core
+
+- **Scope (agreed):** due explanation, localized reminder draft, merchant-approved text, UPI pay link with a unique reference, and payment-reference matching. Voice note, WhatsApp click-to-send link (merchant taps; the server never sends), and recovery metrics are slice 2. Details in `docs/GROWTH_PHASES.md`.
+- **APIs:** `GET/POST /recovery/payment-profile`, `GET/POST /customers/{id}/language`, read-only `GET /customers/{id}/recovery-brief`, `GET /customers/{id}/collection-requests`. `POST /reminders/{id}/approve` gains `language_code`, `localized_message`, and `include_payment_link`. `POST /payments/intake` gains `payment_reference`.
+- **Guards:** a localized message must carry exactly the numbers of the current English reminder (`422 LOCALIZED_NUMBERS_MISMATCH`); a Sarvam translation that changes numbers falls back to English; the pay link omits `am=` when the amount is hidden; a reference that conflicts with a mapped payer, an unknown reference, or an overpayment goes to review/unmatched; replays are idempotent. Sarvam is never called inside a database transaction.
+- **Boundaries:** reminder sending stays mock-only; demo data is unchanged. Migration rehearsal on a copy of the real demo DB: v6 → v8, all row counts identical, original file hash unchanged.
+- **Schema (migration 8):** `customer_preferences`, `shop_payment_profiles`, append-only `collection_requests`; additive `payment_events.payment_reference`/`collection_request_id`, `reminder_transitions.language_code`.
+- **Checks:** `python -m pytest -q tests` → 102 passed (81 existing + 16 recovery + 5 voice-language/Sarvam), 1 Starlette deprecation warning; `python -m compileall -q app tests scripts seed_demo.py` → exit 0; mobile `tsc --noEmit` → exit 0.
+- **Not verified:** live Sarvam translation; on-device use (no UI by design).

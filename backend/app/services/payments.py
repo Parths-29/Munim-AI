@@ -67,6 +67,7 @@ def intake_payment(request: PaymentIntakeCreate) -> PaymentIntakeView:
         raise HTTPException(status_code=422, detail="occurred_at must include a timezone offset.")
     now = datetime.now(timezone.utc).isoformat()
     occurred_at = request.occurred_at.astimezone(timezone.utc).isoformat()
+    reference = request.payment_reference.strip().upper() if request.payment_reference else None
     with connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
         existing = connection.execute(
@@ -83,6 +84,7 @@ def intake_payment(request: PaymentIntakeCreate) -> PaymentIntakeView:
                 and row["payment_status"] == request.status
                 and row["occurred_at"] == occurred_at
                 and row["payer_token"] == request.payer_token
+                and row["payment_reference"] == reference
             )
             if not same_event:
                 raise HTTPException(status_code=409, detail="Payment event ID or idempotency key was reused with different data.")
@@ -92,62 +94,78 @@ def intake_payment(request: PaymentIntakeCreate) -> PaymentIntakeView:
         reason = None
         allocation_entry_id = None
         customer_id = None
-        if request.status != "SUCCESS":
-            resolution_status, reason = "IGNORED", "payment_not_successful"
-        elif not request.payer_token:
-            resolution_status, reason = "UNMATCHED", "payer_token_missing"
-        else:
+        collection_request_id = None
+        matched_by = None
+        mapping = None
+        if request.payer_token:
             mapping = connection.execute(
                 "SELECT customer_id FROM payer_customer_mappings WHERE shop_id = ? AND payer_token = ?",
                 (current_shop(), request.payer_token),
             ).fetchone()
-            if mapping is None:
-                resolution_status, reason = "UNMATCHED", "payer_token_not_mapped"
-            else:
-                customer_id = mapping["customer_id"]
-                balance = int(connection.execute(
-                    """SELECT COALESCE(SUM(CASE entry_type WHEN 'CREDIT' THEN amount_paise WHEN 'REPAYMENT' THEN -amount_paise END), 0)
-                       FROM ledger_entries WHERE shop_id = ? AND customer_id = ? AND status = 'POSTED'""",
-                    (current_shop(), customer_id),
-                ).fetchone()[0])
-                if balance <= 0:
-                    resolution_status, reason = "REVIEW", "no_outstanding_balance"
-                elif request.amount_paise > balance:
-                    resolution_status, reason = "REVIEW", "payment_exceeds_outstanding_balance"
-                else:
-                    resolution_status = "ALLOCATED"
-                    allocation_entry_id = f"entry_{uuid.uuid4().hex[:12]}"
-                    allocation_source_id = f"payment:{request.event_id}:allocation"
-                    allocation_key = f"payalloc:{request.event_id}"
-                    connection.execute(
-                        """INSERT INTO ledger_entries
-                           (entry_id, shop_id, customer_id, entry_type, amount_paise, source_event_id, idempotency_key, status, created_at)
-                           VALUES (?, ?, ?, 'REPAYMENT', ?, ?, ?, 'POSTED', ?)""",
-                        (allocation_entry_id, current_shop(), customer_id, request.amount_paise, allocation_source_id, allocation_key, now),
-                    )
-                    append_event(
-                        connection,
-                        event_type="REPAYMENT_POSTED",
-                        entity_type="LEDGER_ENTRY",
-                        entity_id=allocation_entry_id,
-                        source_event_id=allocation_source_id,
-                        source_channel="provider_mock",
-                        source_utterance=None,
-                        status="POSTED",
-                        summary=f"Mock payment allocation of {request.amount_paise} paise recorded after exact payer-token match.",
-                        idempotency_key=allocation_key,
-                    )
-                    from app.services.reminders import cancel_reminders_if_settled  # lazy: avoids import cycle
+        collection = None
+        if reference:
+            from app.services.recovery import find_collection_request  # lazy: avoids import cycle
 
-                    cancel_reminders_if_settled(connection, customer_id)
+            collection = find_collection_request(connection, reference)
+            collection_request_id = collection["request_id"] if collection else None
+        if request.status != "SUCCESS":
+            resolution_status, reason = "IGNORED", "payment_not_successful"
+        elif collection is not None and mapping is not None and mapping["customer_id"] != collection["customer_id"]:
+            resolution_status, reason = "REVIEW", "payment_reference_conflicts_with_payer"
+        elif collection is None and reference and mapping is None:
+            resolution_status, reason = "UNMATCHED", "payment_reference_not_found"
+        elif collection is None and not request.payer_token:
+            resolution_status, reason = "UNMATCHED", "payer_token_missing"
+        elif collection is None and mapping is None:
+            resolution_status, reason = "UNMATCHED", "payer_token_not_mapped"
+        else:
+            matched_by = "payment_reference" if collection is not None else "payer_token"
+            customer_id = collection["customer_id"] if collection is not None else mapping["customer_id"]
+            balance = int(connection.execute(
+                """SELECT COALESCE(SUM(CASE entry_type WHEN 'CREDIT' THEN amount_paise WHEN 'REPAYMENT' THEN -amount_paise END), 0)
+                   FROM ledger_entries WHERE shop_id = ? AND customer_id = ? AND status = 'POSTED'""",
+                (current_shop(), customer_id),
+            ).fetchone()[0])
+            if balance <= 0:
+                resolution_status, reason = "REVIEW", "no_outstanding_balance"
+            elif request.amount_paise > balance:
+                resolution_status, reason = "REVIEW", "payment_exceeds_outstanding_balance"
+            else:
+                resolution_status = "ALLOCATED"
+                allocation_entry_id = f"entry_{uuid.uuid4().hex[:12]}"
+                allocation_source_id = f"payment:{request.event_id}:allocation"
+                allocation_key = f"payalloc:{request.event_id}"
+                connection.execute(
+                    """INSERT INTO ledger_entries
+                       (entry_id, shop_id, customer_id, entry_type, amount_paise, source_event_id, idempotency_key, status, created_at)
+                       VALUES (?, ?, ?, 'REPAYMENT', ?, ?, ?, 'POSTED', ?)""",
+                    (allocation_entry_id, current_shop(), customer_id, request.amount_paise, allocation_source_id, allocation_key, now),
+                )
+                append_event(
+                    connection,
+                    event_type="REPAYMENT_POSTED",
+                    entity_type="LEDGER_ENTRY",
+                    entity_id=allocation_entry_id,
+                    source_event_id=allocation_source_id,
+                    source_channel="provider_mock",
+                    source_utterance=None,
+                    status="POSTED",
+                    summary=(f"Mock payment allocation of {request.amount_paise} paise recorded after exact "
+                             + ("payment-reference match." if matched_by == "payment_reference" else "payer-token match.")),
+                    idempotency_key=allocation_key,
+                )
+                from app.services.reminders import cancel_reminders_if_settled  # lazy: avoids import cycle
+
+                cancel_reminders_if_settled(connection, customer_id)
 
         connection.execute(
             """INSERT INTO payment_events
                (event_id, shop_id, amount_paise, payment_status, occurred_at, payer_token, source, idempotency_key,
-                resolution_status, resolution_reason, allocation_entry_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                resolution_status, resolution_reason, allocation_entry_id, created_at, payment_reference, collection_request_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (request.event_id, current_shop(), request.amount_paise, request.status, occurred_at, request.payer_token,
-             request.source, request.idempotency_key, resolution_status, reason, allocation_entry_id, now),
+             request.source, request.idempotency_key, resolution_status, reason, allocation_entry_id, now,
+             reference, collection_request_id),
         )
         append_event(
             connection,
@@ -169,7 +187,8 @@ def list_payment_review(limit: int = 50) -> list[PaymentReviewView]:
     bounded_limit = min(max(limit, 1), 100)
     with connect() as connection:
         rows = connection.execute(
-            """SELECT event_id, amount_paise, payment_status, resolution_status, resolution_reason, occurred_at, created_at
+            """SELECT event_id, amount_paise, payment_status, resolution_status, resolution_reason, occurred_at, created_at,
+                      payment_reference
                FROM payment_events p WHERE p.shop_id = ? AND p.resolution_status IN ('REVIEW', 'UNMATCHED')
                  AND NOT EXISTS (SELECT 1 FROM payment_resolutions r WHERE r.shop_id = p.shop_id AND r.event_id = p.event_id)
                ORDER BY p.created_at DESC LIMIT ?""",
@@ -180,6 +199,7 @@ def list_payment_review(limit: int = 50) -> list[PaymentReviewView]:
             event_id=row["event_id"], amount_paise=row["amount_paise"], status=row["payment_status"],
             resolution_status=row["resolution_status"], reason=row["resolution_reason"],
             occurred_at=datetime.fromisoformat(row["occurred_at"]), created_at=datetime.fromisoformat(row["created_at"]),
+            payment_reference=row["payment_reference"],
         )
         for row in rows
     ]
@@ -274,5 +294,8 @@ def _intake_view(row, idempotent_replay: bool = False) -> PaymentIntakeView:
         event_id=row["event_id"], amount_paise=row["amount_paise"], status=row["payment_status"],
         resolution_status=row["resolution_status"], reason=row["resolution_reason"],
         allocation_entry_id=row["allocation_entry_id"], created_at=datetime.fromisoformat(row["created_at"]),
-        idempotent_replay=idempotent_replay,
+        idempotent_replay=idempotent_replay, payment_reference=row["payment_reference"],
+        collection_request_id=row["collection_request_id"],
+        matched_by=(None if row["resolution_status"] != "ALLOCATED"
+                    else "payment_reference" if row["collection_request_id"] else "payer_token"),
     )

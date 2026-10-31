@@ -418,7 +418,8 @@ def cancel_reminders_if_settled(connection: sqlite3.Connection, customer_id: str
 
 def _transition(connection, reminder_id: str, to_status: str, reason: str, actor: str, *, allow_initial: bool = False,
                 message_text: str | None = None, include_amount: bool | None = None, provider: str | None = None,
-                provider_message_id: str | None = None, idempotency_key: str | None = None) -> None:
+                provider_message_id: str | None = None, idempotency_key: str | None = None,
+                language_code: str | None = None) -> None:
     if not allow_initial:
         current = _status(connection, reminder_id)
         if to_status not in TRANSITIONS.get(current, set()):
@@ -427,9 +428,11 @@ def _transition(connection, reminder_id: str, to_status: str, reason: str, actor
     transition_id = f"rtr_{uuid.uuid4().hex[:12]}"
     connection.execute(
         """INSERT INTO reminder_transitions (transition_id, reminder_id, to_status, reason, actor, message_text, include_amount,
-           provider, provider_message_id, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           provider, provider_message_id, idempotency_key, created_at, language_code)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (transition_id, reminder_id, to_status, reason, actor, message_text,
-         None if include_amount is None else int(include_amount), provider, provider_message_id, idempotency_key, stamp),
+         None if include_amount is None else int(include_amount), provider, provider_message_id, idempotency_key, stamp,
+         language_code),
     )
     customer_id = connection.execute("SELECT customer_id FROM reminders WHERE reminder_id = ?", (reminder_id,)).fetchone()[0]
     append_event(
@@ -497,11 +500,40 @@ def approve_reminder(reminder_id: str, request: ReminderApprove) -> ReminderView
                 raise HTTPException(status_code=409, detail={"code": "INVALID_TRANSITION", "from": _status(connection, reminder_id)})
             _revalidate(connection, reminder)
             name = _require_customer(connection, reminder["customer_id"])["display_name"]
-            amount = _current_balance(connection, reminder["customer_id"]) if request.include_amount else None
+            balance = _current_balance(connection, reminder["customer_id"])
+            amount = balance if request.include_amount else None
+            text, language = _approved_text(_message(name, amount), request)
+            if request.include_payment_link:
+                from app.services.recovery import create_collection_request  # lazy: recovery imports this module
+
+                collection = create_collection_request(connection, reminder["customer_id"], reminder_id, amount, balance)
+                text = f"{text}\nUPI: {collection['upi_link']}"
             _transition(connection, reminder_id, "APPROVED_MOCK", "Merchant reviewed recipient, amount, and message.", "merchant",
-                        message_text=_message(name, amount), include_amount=request.include_amount,
-                        idempotency_key=request.idempotency_key)
+                        message_text=text, include_amount=request.include_amount,
+                        idempotency_key=request.idempotency_key, language_code=language)
         return _reminder_view(connection, reminder_id)
+
+
+def _approved_text(source: str, request: ReminderApprove) -> tuple[str, str]:
+    """English by default. A localized text is accepted only if it carries exactly the source's numbers."""
+    from app.services.sarvam import LANGUAGES, numbers_match
+
+    if request.localized_message is None:
+        if request.language_code not in (None, "en-IN"):
+            raise HTTPException(status_code=422, detail={
+                "code": "LOCALIZED_MESSAGE_REQUIRED",
+                "message": "Send the reviewed localized_message from the recovery brief, or omit language_code.",
+            })
+        return source, "en-IN"
+    if request.language_code not in LANGUAGES or request.language_code == "en-IN":
+        raise HTTPException(status_code=422, detail={"code": "UNSUPPORTED_LANGUAGE", "supported": sorted(set(LANGUAGES) - {"en-IN"})})
+    if not numbers_match(source, request.localized_message):
+        raise HTTPException(status_code=422, detail={
+            "code": "LOCALIZED_NUMBERS_MISMATCH",
+            "message": "The localized text must carry exactly the same amounts as the current English reminder. Re-open the brief.",
+            "expected_source_text": source,
+        })
+    return request.localized_message.strip(), request.language_code
 
 
 def cancel_reminder(reminder_id: str, request: ReminderAction) -> ReminderView:
@@ -595,6 +627,9 @@ def _reminder_view(connection, reminder_id: str) -> ReminderView:
     include_amount = bool(approved[-1]["include_amount"]) if approved else False
     message = approved[-1]["message_text"] if approved else _message(customer["display_name"], None)
     consent = connection.execute("SELECT contact_value FROM customer_contact_consents WHERE consent_id = ?", (reminder["consent_id"],)).fetchone()
+    collection = connection.execute(
+        "SELECT request_id, reference FROM collection_requests WHERE reminder_id = ? ORDER BY created_at DESC LIMIT 1", (reminder_id,)
+    ).fetchone()
     return ReminderView(
         reminder_id=reminder_id, customer_id=reminder["customer_id"], display_name=customer["display_name"],
         channel=reminder["channel"], contact_masked=mask_phone(consent["contact_value"]), status=transitions[-1]["to_status"],
@@ -603,6 +638,9 @@ def _reminder_view(connection, reminder_id: str) -> ReminderView:
         oldest_unpaid_local_date=date.fromisoformat(reminder["oldest_unpaid_local_date"]),
         overdue_days_at_eligibility=reminder["overdue_days"], eligibility_reason=transitions[0]["reason"],
         message_preview=message, include_amount=include_amount, created_at=datetime.fromisoformat(reminder["created_at"]),
+        language_code=(approved[-1]["language_code"] or "en-IN") if approved else "en-IN",
+        payment_reference=collection["reference"] if collection else None,
+        collection_request_id=collection["request_id"] if collection else None,
         transitions=[TransitionView(
             to_status=row["to_status"], reason=row["reason"], actor=row["actor"], provider=row["provider"],
             provider_message_id=row["provider_message_id"], created_at=datetime.fromisoformat(row["created_at"]),

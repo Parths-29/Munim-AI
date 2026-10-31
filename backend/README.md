@@ -80,7 +80,11 @@ For Expo Web, local CORS origins default to `http://localhost:8081` and `http://
 | `GET` | `/reminders/eligibility/preview?as_of=` | Read-only FIFO aging and eligibility reasons. |
 | `POST` | `/reminders/eligibility/run?as_of=` | Create reminders awaiting approval; idempotent; sends nothing. |
 | `GET` | `/reminders`, `/reminders/{id}` | Outbox with message preview and transition history. |
-| `POST` | `/reminders/{id}/approve`, `/cancel`, `/mock-send`, `/mock-delivery-receipt` | Merchant approval and **mock-only** send/delivery states. |
+| `POST` | `/reminders/{id}/approve`, `/cancel`, `/mock-send`, `/mock-delivery-receipt` | Merchant approval and **mock-only** send/delivery states. Approval accepts a reviewed `localized_message` (numbers must match) and `include_payment_link`. |
+| `GET`/`POST` | `/recovery/payment-profile` | Shop UPI ID and payee name for customer pay links. |
+| `GET`/`POST` | `/customers/{id}/language` | Customer's reminder language (default `en-IN`). |
+| `GET` | `/customers/{id}/recovery-brief?language=&include_amount=&as_of=` | Read-only: why the customer owes, eligibility reasons, localized draft, ready approve payload. |
+| `GET` | `/customers/{id}/collection-requests` | UPI pay links issued and their paid status. |
 
 Customer, ledger, and inventory writes use a stable `idempotency_key`, a unique `source_event_id`, and explicit `confirmed` state. Use the accepted command ID as the idempotency key. Replaying either key or source event has one effect; reusing one for different operation details returns `409 Conflict`. Payment endpoints have their own documented event and confirmation rules below.
 
