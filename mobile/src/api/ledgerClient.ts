@@ -72,12 +72,50 @@ export interface AgentTurnResult {
   } | null;
   proposal: { proposal_id: string; content_hash: string; actions: AgentProposedAction[]; inferred_notes: string[]; expires_at: string } | null;
   clarification: { question: string; missing: string[]; slot_id: string | null; choices: AgentChoiceOption[] } | null;
+  reply_text: string;
+  reply_language: string;
+  reply_worded_by: 'gemini' | 'template';
 }
 export interface AgentConfirmResult {
   proposal_id: string;
   status: 'APPLIED';
-  applied: { index: number; kind: string; entity_id: string; summary: string }[];
+  applied: {
+    index: number;
+    kind: string;
+    entity_id: string;
+    summary: string;
+    customer_name: string | null;
+    product_name: string | null;
+    amount_paise: number | null;
+    balance_after_paise: number | null;
+    on_hand_after: number | null;
+    unit: string | null;
+  }[];
   idempotent_replay: boolean;
+  reply_text: string;
+  reply_language: string;
+  reply_worded_by: 'gemini' | 'template';
+}
+
+export interface AgentSpeakResult {
+  audio_base64: string;
+  mime_type: 'audio/wav';
+  provider: string;
+  model: string | null;
+  speaker: string | null;
+  language_code: string;
+  stored: false;
+}
+
+/** Sarvam voice for a reply that is already shown as text. Returned audio is never stored by the backend. */
+export async function agentSpeak(text: string, languageCode: string): Promise<AgentSpeakResult> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/agent/speak`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: text.slice(0, 600), language_code: languageCode }),
+  }, 25_000, 'Voice reply');
+  if (!res.ok) throw new Error(await errorDetail(res, `Voice reply failed with HTTP ${res.status}`));
+  return res.json();
 }
 export class AgentUnavailableError extends Error {}
 

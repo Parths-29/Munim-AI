@@ -20,7 +20,7 @@ def temp_db(tmp_path, monkeypatch):
     monkeypatch.setenv("MUNIM_SARVAM_MODE", "fake")  # offline translate/TTS; never the live API in tests
     monkeypatch.setattr("app.services.speech._api_key", lambda: None)
     monkeypatch.setattr("app.services.sarvam._api_key", lambda: None)
-    monkeypatch.setattr("app.services.agent_llm._get_api_key", lambda: None)  # agent: deterministic unless a test fakes Gemini
+    monkeypatch.setattr("app.services.agent_llm._api_keys", lambda: [])  # agent: deterministic unless a test fakes Gemini
     for target in ("explainer", "command_nlp", "inward_parser", "invoice_extraction"):
         monkeypatch.setattr(f"app.services.{target}._get_api_key", lambda: None)
 

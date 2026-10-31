@@ -64,6 +64,7 @@ import {
 } from '@/api/ledgerClient';
 import { MerchantCommandIntent, parseMerchantCommand } from '@/features/home/parseMerchantCommand';
 import AgentResultCard from '@/features/home/AgentResultCard';
+import { ReplyVoiceBar, useReplyVoice } from '@/features/home/replyVoice';
 import PaymentReviewScreen from '@/features/paymentReview/PaymentReviewScreen';
 import InventoryScreen from '@/features/inventory/InventoryScreen';
 import TimelineScreen from '@/features/timeline/TimelineScreen';
@@ -145,6 +146,11 @@ export default function HomeScreen() {
   const agentSessionRef = useRef<string | null>(null);
   const agentConfirmKeyRef = useRef<string | null>(null);
   const rawTranscriptRef = useRef<string | null>(null);
+  const replyVoice = useReplyVoice();
+  const [voiceReplies, setVoiceReplies] = useState(true);
+  const speakReply = (text: string | undefined, language: string | undefined) => {
+    if (voiceReplies && text) void replyVoice.speak(text, language ?? 'en-IN');
+  };
 
   // "Aaj kaisa raha?" end-to-end slice state
   const [insightsBrief, setInsightsBrief] = useState<FactsResponse | null>(null);
@@ -246,6 +252,7 @@ export default function HomeScreen() {
 
   const startVoiceRecording = async () => {
     if (loading || voiceBusy || recorderState.isRecording) return;
+    replyVoice.stop();
     try {
       const permission = await AudioModule.requestRecordingPermissionsAsync();
       if (!permission.granted) {
@@ -407,6 +414,7 @@ export default function HomeScreen() {
         useLocalFlow = true; // the existing summary views already render these
       } else {
         setAgentResult(result);
+        speakReply(result.reply_text, result.reply_language);
       }
     } catch (err: unknown) {
       if (err instanceof AgentUnavailableError) {
@@ -432,6 +440,7 @@ export default function HomeScreen() {
       agentSessionRef.current = result.session_id;
       agentConfirmKeyRef.current = null;
       setAgentResult(result);
+      speakReply(result.reply_text, result.reply_language);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       setCommandFeedback({ tone: 'error', title: 'Could Not Apply Choice', message: `${message} Nothing was recorded.` });
@@ -450,7 +459,9 @@ export default function HomeScreen() {
     try {
       const saved = await confirmAgentProposal(proposal.proposal_id, proposal.content_hash, agentConfirmKeyRef.current);
       setAgentResult(null);
-      setCommandFeedback({ tone: 'success', title: 'Saved', message: saved.applied.map((item) => item.summary).join('\n') });
+      // Built by the backend from values read back after the write committed.
+      setCommandFeedback({ tone: 'success', title: 'Saved', message: saved.reply_text });
+      speakReply(saved.reply_text, saved.reply_language);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       setCommandFeedback({ tone: 'error', title: 'Not Saved', message: `${message} Nothing was changed.` });
@@ -1118,6 +1129,8 @@ export default function HomeScreen() {
                 <Text style={styles.commandFeedbackText}>{commandFeedback.message}</Text>
               </View>
             )}
+
+            <ReplyVoiceBar voice={replyVoice} enabled={voiceReplies} onToggle={() => { replyVoice.stop(); setVoiceReplies((on) => !on); }} />
 
             {agentResult && (
               <AgentResultCard

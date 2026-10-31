@@ -11,8 +11,8 @@ from pydantic import Field
 
 from app.domain.models import StrictModel
 
-ActionKind = Literal["customer_create", "credit", "repayment", "sale"]
-ReadKind = Literal["balance", "stock_check", "payment_summary", "timeline_summary"]
+ActionKind = Literal["customer_create", "credit", "repayment", "sale", "stock_count", "stockout"]
+ReadKind = Literal["balance", "stock_check", "payment_summary", "timeline_summary", "supplier_balance", "guidance"]
 
 
 class AgentChoice(StrictModel):
@@ -57,6 +57,10 @@ class AgentAnswer(StrictModel):
     product_name: str | None = None
     on_hand_quantity: int | None = None
     unit: str | None = None
+    supplier_id: str | None = None
+    supplier_name: str | None = None
+    supplier_due_paise: int | None = None
+    feature: str | None = None
     notes: list[str] = Field(default_factory=list)
 
 
@@ -93,6 +97,8 @@ class ProviderStatus(StrictModel):
     status: Literal["ok", "disabled", "not_configured", "unreachable", "auth_error", "model_not_found", "quota", "bad_request",
                     "server_error", "invalid_output"]
     detail: str | None = None
+    key_slot: str | None = None  # which configured key answered (name only, never the value)
+    attempts: int = 0
 
 
 class AgentTurnResponse(StrictModel):
@@ -107,6 +113,9 @@ class AgentTurnResponse(StrictModel):
     proposal: AgentProposal | None = None
     clarification: Clarification | None = None
     writes_performed: Literal[False] = False
+    reply_text: str = ""  # what to speak: built from verified backend results (optionally worded by Gemini)
+    reply_language: str = "en-IN"
+    reply_worded_by: Literal["gemini", "template"] = "template"
 
 
 class AgentConfirm(StrictModel):
@@ -120,6 +129,13 @@ class AppliedAction(StrictModel):
     kind: ActionKind
     entity_id: str
     summary: str
+    customer_name: str | None = None
+    product_name: str | None = None
+    amount_paise: int | None = None
+    quantity: int | None = None
+    unit: str | None = None
+    balance_after_paise: int | None = None  # read back from the ledger after the write committed
+    on_hand_after: int | None = None
 
 
 class AgentConfirmResult(StrictModel):
@@ -127,9 +143,29 @@ class AgentConfirmResult(StrictModel):
     status: Literal["APPLIED"] = "APPLIED"
     applied: list[AppliedAction]
     idempotent_replay: bool = False
+    reply_text: str = ""
+    reply_language: str = "en-IN"
+    reply_worded_by: Literal["gemini", "template"] = "template"
+
+
+class AgentSpeakRequest(StrictModel):
+    text: str = Field(min_length=1, max_length=600)
+    language_code: str | None = Field(default=None, min_length=5, max_length=5)
+
+
+class AgentSpeakResponse(StrictModel):
+    audio_base64: str
+    mime_type: Literal["audio/wav"] = "audio/wav"
+    provider: str
+    model: str | None
+    speaker: str | None
+    language_code: str
+    stored: Literal[False] = False
 
 
 class AgentHealth(StrictModel):
     llm: ProviderStatus
     model: str
     key_configured: bool
+    key_slots_configured: list[str] = Field(default_factory=list)
+    voice_output: str = "off"  # live | fake | off

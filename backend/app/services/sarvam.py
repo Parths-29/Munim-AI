@@ -103,30 +103,75 @@ def _fake_wav(text: str) -> bytes:
     return buffer.getvalue()
 
 
-def synthesize(text: str, language_code: str = "hi-IN") -> tuple[bytes, str]:
-    """Return (wav_bytes, provider). Raises SpeechUnavailable when TTS is off or fails."""
-    text = " ".join(text.split())[:1500]
+TTS_DEFAULT_MODEL = "bulbul:v3"
+TTS_DEFAULT_SPEAKERS = {"bulbul:v3": "shubh", "bulbul:v2": "anushka", "bulbul:v4-flash": "shubh_enhi_ads"}
+TTS_FALLBACK_MODEL = "bulbul:v2"
+TTS_TEXT_LIMITS = {"bulbul:v2": 1500}
+
+
+@dataclass
+class SpeechResult:
+    audio: bytes
+    provider: str
+    model: str | None
+    speaker: str | None
+    language_code: str
+
+
+def _tts_request(text: str, language_code: str, model: str, speaker: str | None, timeout: float) -> bytes:
+    payload = {"text": text[: TTS_TEXT_LIMITS.get(model, 2500)], "language_code": language_code, "model": model}
+    if speaker:
+        payload["speaker"] = speaker
+    body = _post("https://api.sarvam.ai/text-to-speech", payload, timeout=timeout)
+    audios = body.get("audios")
+    if not isinstance(audios, list) or not audios or not isinstance(audios[0], str):
+        raise ValueError("no audio in response")
+    return base64.b64decode(audios[0])
+
+
+def synthesize_speech(text: str, language_code: str = "en-IN", timeout: float = 20) -> SpeechResult:
+    """Speak already-verified text. Audio is returned to the caller and never stored.
+
+    SARVAM_TTS_MODEL (default bulbul:v3) and SARVAM_TTS_SPEAKER are configurable. If the account rejects the
+    configured model (HTTP 400/403/422), one retry uses bulbul:v2 with its default voice. Timeouts and outages
+    are not retried.
+    """
+    text = " ".join(text.split())
     if not text:
         raise SpeechUnavailable("Nothing to speak.")
-    language_code = language_code if language_code in LANGUAGES else "hi-IN"
+    language_code = language_code if language_code in LANGUAGES else "en-IN"
     mode = _mode()
     if mode == "off":
-        raise SpeechUnavailable("Voice output is not configured (set SARVAM_API_KEY).")
+        raise SpeechUnavailable("Voice output is not configured: set SARVAM_API_KEY in the backend's ignored .env.")
     if mode == "fake":
-        return _fake_wav(text), "fake"
-    try:
-        body = _post("https://api.sarvam.ai/text-to-speech", {
-            "text": text, "target_language_code": language_code,
-            "speaker": os.environ.get("SARVAM_TTS_SPEAKER", "anushka"),
-            "model": os.environ.get("SARVAM_TTS_MODEL", "bulbul:v2"),
-        }, timeout=20)
-        audios = body.get("audios")
-        if not isinstance(audios, list) or not audios or not isinstance(audios[0], str):
-            raise ValueError("no audio in response")
-        return base64.b64decode(audios[0]), "sarvam"
-    except urllib.error.HTTPError as error:
-        logger.warning("Sarvam TTS HTTP %s.", error.code)
-        raise SpeechUnavailable(f"Sarvam voice output failed (HTTP {error.code}).") from None
-    except Exception as error:
-        logger.warning("Sarvam TTS unavailable (%s).", type(error).__name__)
-        raise SpeechUnavailable("Sarvam voice output is temporarily unavailable.") from None
+        return SpeechResult(_fake_wav(text), "fake", None, None, language_code)
+    model = (os.environ.get("SARVAM_TTS_MODEL") or TTS_DEFAULT_MODEL).strip()
+    speaker = (os.environ.get("SARVAM_TTS_SPEAKER") or TTS_DEFAULT_SPEAKERS.get(model, "")).strip() or None
+    attempts = [(model, speaker)]
+    if model != TTS_FALLBACK_MODEL:
+        attempts.append((TTS_FALLBACK_MODEL, TTS_DEFAULT_SPEAKERS[TTS_FALLBACK_MODEL]))
+    last_error = "unknown"
+    for index, (attempt_model, attempt_speaker) in enumerate(attempts):
+        try:
+            audio = _tts_request(text, language_code, attempt_model, attempt_speaker, timeout)
+            return SpeechResult(audio, "sarvam", attempt_model, attempt_speaker, language_code)
+        except urllib.error.HTTPError as error:
+            logger.warning("Sarvam TTS HTTP %s for model %s.", error.code, attempt_model)
+            last_error = f"HTTP {error.code}"
+            if error.code in (400, 403, 422) and index + 1 < len(attempts):
+                continue
+            if error.code in (401, 403):
+                raise SpeechUnavailable("Sarvam rejected the API key for voice output. Update SARVAM_API_KEY in the ignored .env.") from None
+            if error.code == 429:
+                raise SpeechUnavailable("Sarvam voice output quota or rate limit reached. The text reply is still shown.") from None
+            raise SpeechUnavailable(f"Sarvam voice output failed ({last_error}). The text reply is still shown.") from None
+        except Exception as error:
+            logger.warning("Sarvam TTS unavailable (%s).", type(error).__name__)
+            raise SpeechUnavailable("Sarvam voice output is unreachable or timed out. The text reply is still shown.") from None
+    raise SpeechUnavailable(f"Sarvam voice output failed ({last_error}).")
+
+
+def synthesize(text: str, language_code: str = "hi-IN") -> tuple[bytes, str]:
+    """Backward-compatible wrapper: (wav_bytes, provider)."""
+    result = synthesize_speech(text, language_code)
+    return result.audio, result.provider

@@ -46,7 +46,7 @@ export default function AgentResultCard({ result, busy, onConfirm, onCancel, onC
         <Text style={styles.meta}>Understood as: “{transcript.model_corrected}” (edit the text if this is wrong)</Text>
       )}
 
-      {result.status !== 'proposal' && <Text style={styles.message}>{result.message}</Text>}
+      {result.status !== 'proposal' && <Text style={styles.message}>{result.reply_text || result.message}</Text>}
 
       {answer?.kind === 'balance' && (
         <Text style={styles.big}>{answer.customer_name}: {rupees(answer.balance_due_paise)} due</Text>
@@ -99,6 +99,7 @@ export default function AgentResultCard({ result, busy, onConfirm, onCancel, onC
 
       <Text style={styles.footer}>
         {result.interpreted_by === 'gemini' ? 'Understood with Gemini' : result.interpreted_by === 'deterministic' ? 'Understood offline (rules)' : 'From your choice / previous request'}
+        {result.reply_worded_by === 'gemini' ? ' · Reply worded by Gemini from verified figures' : ''}
         {result.llm.status !== 'ok' && result.llm.status !== 'disabled' && result.llm.detail ? ` · Gemini: ${result.llm.detail}` : ''}
       </Text>
     </View>

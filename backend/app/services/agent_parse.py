@@ -12,7 +12,8 @@ from app.services.hindi_numbers import FRACTION_WORDS, NUMBER_WORDS, SCALE_WORDS
 from app.services.units import ascii_digits, is_known_unit_word
 
 RUPEE_WORDS = {"rupaye", "rupay", "rupya", "rupees", "rupee", "rs", "rs.", "inr", "₹"}
-PRONOUNS = {"uske", "usko", "uska", "uski", "unka", "unko", "unke", "unki", "iske", "isko", "iska", "inko", "inka", "use", "usse"}
+PRONOUNS = {"uske", "usko", "uska", "uski", "unka", "unko", "unke", "unki", "iske", "isko", "iska", "inko", "inka", "use", "usse",
+            "his", "her", "him", "them", "their", "its"}
 CONTINUATION = {"aur", "and", "bhi", "phir", "also", "plus"}
 STOPWORDS = {
     "ko", "ka", "ki", "ke", "ne", "se", "mein", "me", "main", "par", "pe", "naam", "hai", "hain", "tha", "the", "thi", "ho", "hua",
@@ -24,6 +25,7 @@ STOPWORDS = {
     "show", "tell", "me", "check", "kitna", "kitne", "kitni", "kya", "what", "how", "much", "many", "hisaab", "hisab", "total",
     "sirf", "bas", "wo", "woh", "ye", "yeh", "ek", "baar", "ok", "okay", "haan", "ji", "accha", "acha", "ya", "or", "athva",
     "nahi", "nahin", "nai", "galat", "wrong", "sorry", "actually", "matlab", "correct", "change", "badlo", "instead",
+    "as", "put", "more", "aur", "into", "with", "record", "please", "set", "make", "mark", "this", "that", "it", "pe", "wale",
 }
 CREDIT_WORDS = re.compile(r"\b(?:udhaar|udhar|udhari|udhaari|udhaar[iy]|credit|borrowed|lend|lent)\b")
 REPAYMENT_WORDS = re.compile(
@@ -37,9 +39,21 @@ BALANCE_WORDS = re.compile(
 CREATE_WORDS = re.compile(
     r"\b(?:naya|nayi|new)\s+(?:customer|grahak)\b|\b(?:add|create|register|banao|jodo)\s+(?:a\s+)?(?:new\s+)?(?:customer|grahak)\b"
     r"|\b(?:customer|grahak)\s+(?:add|create|banao|bana\s+do|jodo)\b"
+    r"|\b(?:add|create|register)\s+[^\W\d_]+(?:\s+[^\W\d_]+)?\s+as\s+(?:a\s+)?(?:new\s+)?(?:customer|grahak)\b"
 )
+STOCK_COUNT_WORDS = re.compile(r"\b(?:physical\s+count|stock\s+count|counted|ginti|gin\s+liya|gine)\b|\bset\b.*\bstock\b|\bcount\b")
+STOCKOUT_WORDS = re.compile(r"\b(?:khatam|khatm|stockout|stock\s*out|out\s+of\s+stock|sold\s+out|nahi\s+bacha|nahi\s+bache|finished)\b")
+SUPPLIER_WORDS = re.compile(r"\b(?:supplier|wholesaler|vendor|distributor|agency|dealer)\b")
+SUPPLIER_DUE_WORDS = re.compile(r"\b(?:dena|dene|payable|owe|balance|baki|baaki|bakaya|due|kitna|hisaab|hisab)\b")
+GUIDANCE_WORDS = {
+    "invoice": re.compile(r"\b(?:invoice|bill|challan)\b.*\b(?:photo|scan|upload|image)\b|\b(?:photo|scan)\b.*\b(?:invoice|bill|challan)\b"),
+    "inward": re.compile(r"\b(?:maal|delivery|stock)\s+(?:aaya|aaye|aayi|aa\s+gaya|aa\s+gaye|received|came)\b|\bse\b.*\b(?:aaya|aaye|aayi)\b"),
+    "reminder": re.compile(r"\b(?:reminder|yaad\s+dila|remind)\b"),
+    "notebook": re.compile(r"\b(?:bahi|khata\s+book|notebook|register)\b.*\b(?:photo|scan)\b"),
+}
 SALE_WORDS = re.compile(r"\b(?:bech|becha|beche|bechi|bechiye|bik|bika|bike|biki|sold|sell|sale)\b")
 STOCK_WORDS = re.compile(r"\b(?:stock|inventory|bacha|bache|bachi|left|remaining|available|maal)\b")
+STOCK_FILLER = {"count", "counted", "ginti", "physical", "khatam", "khatm", "stockout", "out", "finished", "sold", "gaya", "gayi"}
 PAYMENT_SUMMARY_WORDS = re.compile(r"\b(?:payments?|upi|collections?)\b.*\b(?:summary|today|aaj|total|kitne|kitna|aaye|aaya)\b")
 TIMELINE_WORDS = re.compile(r"\b(?:what happened|kya hua|activity|timeline|din kaisa|aaj kaisa)\b")
 GENERIC_WRITE = re.compile(r"\b(?:add|likh|likho|likhdo|note|daal|daalo|dalo|chadha|chadhao|entry|jod|jodo)\b")
@@ -69,6 +83,8 @@ class Draft:
     kind: str | None = None  # credit | repayment | balance | customer_create | sale | stock_check | payment_summary | timeline_summary
     customer_text: str | None = None
     product_text: str | None = None
+    supplier_text: str | None = None
+    feature: str | None = None  # for kind == "guidance": invoice | inward | reminder | notebook
     amount_text: str | None = None
     amount_paise: int | None = None
     quantity: int | None = None
@@ -82,6 +98,7 @@ class Draft:
     # Filled by the agent while resolving (never by an interpreter):
     customer_id: str | None = None
     product_id: str | None = None
+    supplier_id: str | None = None
     create_ref: int | None = None  # index of a customer_create draft in the same turn
     new_customer_ok: bool = False  # merchant chose "create new" despite a similar existing customer
     inferred: list[str] = field(default_factory=list)
@@ -193,14 +210,22 @@ def number_spans(tokens: list[str]) -> list[NumberSpan]:
 
 def _name_from(tokens: list[str], skip: set[int]) -> str | None:
     words = [t for i, t in enumerate(tokens) if i not in skip and t.lower() not in STOPWORDS and t.lower() not in KIND_WORDS
+             and t.lower() not in STOCK_FILLER
              and t.lower() not in RUPEE_WORDS and t.lower() not in PRONOUNS and t.lower() not in CONTINUATION
              and not is_known_unit_word(t.lower()) and not re.fullmatch(r"\d[\d,.]*", t)]
     return " ".join(words) or None
 
 
 def _kind(norm: str) -> str | None:
+    for feature, pattern in GUIDANCE_WORDS.items():
+        if pattern.search(norm):
+            return f"guidance:{feature}"
     if CREATE_WORDS.search(norm):
         return "customer_create"
+    if SUPPLIER_WORDS.search(norm) and SUPPLIER_DUE_WORDS.search(norm):
+        return "supplier_balance"
+    if STOCKOUT_WORDS.search(norm):
+        return "stockout"
     if PAYMENT_SUMMARY_WORDS.search(norm):
         return "payment_summary"
     if TIMELINE_WORDS.search(norm):
@@ -217,6 +242,8 @@ def _kind(norm: str) -> str | None:
         return "credit"
     if repayment:
         return "repayment"
+    if STOCK_COUNT_WORDS.search(norm):
+        return "stock_count"
     if STOCK_WORDS.search(norm) and (question or "?" in norm or re.search(r"\b(?:kitn[aei]|check)\b", norm)):
         return "stock_check"
     return None
@@ -229,6 +256,9 @@ def parse_segment(text: str) -> Draft:
     if tokens and tokens[0].lower() in CONTINUATION:
         draft.continuation = True
     draft.kind = _kind(norm)
+    if draft.kind and draft.kind.startswith("guidance:"):
+        draft.kind, draft.feature = "guidance", draft.kind.split(":", 1)[1]
+        return draft
     draft.generic_write = bool(GENERIC_WRITE.search(norm))
     draft.pronoun_ref = any(t.lower() in PRONOUNS for t in tokens)
     if draft.kind is None and GAVE_TO_CUSTOMER.search(norm):
@@ -239,7 +269,20 @@ def parse_segment(text: str) -> Draft:
         skip.update(range(span.start, span.end))
         if span.quantity_unit:
             skip.add(span.end)
-    if draft.kind == "sale":
+    if draft.kind == "stock_count":
+        whole = [s for s in spans if s.value == int(s.value) and s.value >= 0 and not s.money]
+        if len(whole) == 1:
+            draft.quantity, draft.quantity_text = int(whole[0].value), whole[0].text
+            draft.unit_text = whole[0].quantity_unit
+        elif len(whole) > 1:
+            draft.issues.append("AMBIGUOUS_QUANTITY")
+        draft.product_text = _name_from(tokens, skip)
+    elif draft.kind == "stockout":
+        draft.product_text = _name_from(tokens, skip)
+    elif draft.kind == "supplier_balance":
+        words = [t for t in (_name_from(tokens, skip) or "").split() if t.lower() not in {"supplier", "wholesaler", "vendor", "distributor", "agency", "dealer"}]
+        draft.supplier_text = " ".join(words) or None
+    elif draft.kind == "sale":
         if spans:
             span = spans[0]
             if span.value == int(span.value) and span.value > 0 and not span.money:

@@ -101,6 +101,9 @@ Read-only checks and summaries do not need a write confirmation. Credit, repayme
 - Read-only answers (balance, stock) run once the entity resolves; every write is a stored proposal showing customer/product, action, amount/quantity, before → after, and any inferred detail. Confirm applies all actions atomically (`POST /agent/proposals/{id}/confirm`); cancel and amount corrections (“nahi, 600”) are supported; a spoken “haan” never saves.
 - Short per-shop session context (10 minutes) is reused only with a cue (“aur”, “uske”) and is always labelled as inferred.
 - Gemini is primary when `GEMINI_API_KEY` works; otherwise the app says it understood with offline rules. Check with `python -m scripts.check_gemini`.
+- **Spoken replies:** every answer, proposal, question, and confirmed save is shown as text and spoken with Sarvam Bulbul (`POST /agent/speak`; replay/stop/toggle in the app; audio never stored). Replies are built from backend results; after a confirm the receipt uses the balance/stock read back from the database. Gemini (`gemini-3.6-flash` by default) may reword verified facts; any reworded reply with an unverified number is discarded.
+- Gemini key rotation (`GEMINI_API_KEY`, `_FALLBACK_2`, `_FALLBACK_3`) happens only on 401/403/429; never on timeouts or outages.
+- Voice also covers physical stock counts, stockout observations, and supplier dues; photo/inward/reminder flows get honest guidance to their existing APIs.
 - Phone setups (laptop web, Expo Go over LAN, phone browser HTTPS/mic/CORS) and what was verified: [`PHONE_SETUP.md`](PHONE_SETUP.md).
 
 ### 5.3 Inventory memory

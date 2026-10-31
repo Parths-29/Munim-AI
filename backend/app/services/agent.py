@@ -24,6 +24,8 @@ from app.domain.agent import (
     AgentConfirmResult,
     AgentHealth,
     AgentProposal,
+    AgentSpeakRequest,
+    AgentSpeakResponse,
     AgentTurnRequest,
     AgentTurnResponse,
     AppliedAction,
@@ -51,8 +53,15 @@ HONORIFICS = {
     "dadi", "nana", "nani", "anna", "akka", "mr", "mrs", "ms", "shri", "shree", "smt", "sir", "madam", "bhau", "tai",
 }
 POSTPOSITIONS = {"ka", "ki", "ke", "ko", "ne", "se", "wala", "wali", "wale"}
-WRITE_KINDS = ("customer_create", "credit", "repayment", "sale")
-READ_KINDS = ("balance", "stock_check", "payment_summary", "timeline_summary")
+WRITE_KINDS = ("customer_create", "credit", "repayment", "sale", "stock_count", "stockout")
+READ_KINDS = ("balance", "stock_check", "payment_summary", "timeline_summary", "supplier_balance", "guidance")
+GUIDANCE = {
+    "invoice": "Supplier invoice photos use the invoice flow (POST /invoices/proposals); it is not part of the voice copilot yet.",
+    "inward": "Goods received from a supplier use quick inward (POST /inventory/inward/proposals); it is not part of the voice copilot yet.",
+    "reminder": "Udhaar reminders are in the reminders flow (consent, approval, mock send only); they are not part of the voice copilot yet.",
+    "notebook": "Notebook (bahi-khata) photos use the ledger-pages flow (POST /ledger-pages); it is not part of the voice copilot yet.",
+    "other": "I can do balances, udhaar, jama, new customers, sales, stock checks and counts, stockouts, supplier dues, and summaries.",
+}
 
 
 def now_utc() -> datetime:
@@ -85,6 +94,12 @@ def _entities(connection, kind: str) -> list[dict]:
         rows = connection.execute(
             """SELECT c.customer_id AS id, c.display_name AS name, a.alias AS alias FROM customers c
                LEFT JOIN customer_aliases a ON a.shop_id = c.shop_id AND a.customer_id = c.customer_id WHERE c.shop_id = ?""",
+            (current_shop(),),
+        ).fetchall()
+    elif kind == "supplier":
+        rows = connection.execute(
+            """SELECT s.supplier_id AS id, s.display_name AS name, a.alias AS alias FROM suppliers s
+               LEFT JOIN supplier_aliases a ON a.shop_id = s.shop_id AND a.supplier_id = s.supplier_id WHERE s.shop_id = ?""",
             (current_shop(),),
         ).fetchall()
     else:
@@ -285,6 +300,22 @@ def _resolve_product(connection, draft: Draft, index: int) -> None:
                             choices=[ChoiceOption(option_id=m["id"], label=m["name"]) for m in matches]))
 
 
+def _resolve_supplier(connection, draft: Draft, index: int) -> None:
+    if draft.supplier_id:
+        return
+    if not draft.supplier_text:
+        raise Ask(Clarification(question="Which supplier?", missing=["supplier"]))
+    status, matches, _ = resolve_name(connection, "supplier", draft.supplier_text)
+    if status == "RESOLVED":
+        draft.supplier_id = matches[0]["id"]
+        return
+    question = (f"More than one supplier matches “{draft.supplier_text}”. Which one?" if status == "AMBIGUOUS"
+                else f"No supplier is named exactly “{draft.supplier_text}”. Did you mean one of these?" if matches
+                else f"I could not find a supplier called “{draft.supplier_text}”.")
+    raise Ask(Clarification(question=question, missing=["supplier"], slot_id=f"supplier:{index}" if matches else None,
+                            choices=[ChoiceOption(option_id=m["id"], label=m["name"]) for m in matches]))
+
+
 def _resolve(connection, drafts: list[Draft], context: dict) -> None:
     """Fill IDs, actions, and amounts in place, or raise Ask with one targeted question."""
     last = context.get("last") or {}
@@ -334,6 +365,18 @@ def _resolve(connection, drafts: list[Draft], context: dict) -> None:
                 raise Ask(Clarification(question="How many were sold?", missing=["quantity"]))
         elif draft.kind == "stock_check":
             _resolve_product(connection, draft, index)
+        elif draft.kind == "stock_count":
+            _resolve_product(connection, draft, index)
+            if "AMBIGUOUS_QUANTITY" in draft.issues:
+                raise Ask(Clarification(question="I heard more than one number. What is the counted quantity?", missing=["quantity"]))
+            if draft.quantity is None:
+                if draft.uncertain_numbers:
+                    raise Ask(_uncertain_question(draft, index, "quantity"))
+                raise Ask(Clarification(question="How many did you count on the shelf?", missing=["quantity"]))
+        elif draft.kind == "stockout":
+            _resolve_product(connection, draft, index)
+        elif draft.kind == "supplier_balance":
+            _resolve_supplier(connection, draft, index)
 
 
 def _apply_choice(drafts: list[Draft], slot: str, option: str) -> None:
@@ -351,6 +394,8 @@ def _apply_choice(drafts: list[Draft], slot: str, option: str) -> None:
         draft.quantity, draft.uncertain_numbers = int(option), []
     elif kind == "product":
         draft.product_id = option
+    elif kind == "supplier":
+        draft.supplier_id = option
     elif kind == "customer" and option == "new":
         drafts.insert(index, Draft(kind="customer_create", customer_text=draft.customer_text, new_customer_ok=True))
         for later in drafts[index + 1:]:
@@ -444,6 +489,36 @@ def _build_actions(connection, drafts: list[Draft]) -> tuple[list[ProposedAction
             answers.append(AgentAnswer(kind="stock_check", product_id=draft.product_id, product_name=product["name"],
                                        on_hand_quantity=on_hand_quantity(connection, draft.product_id)[0], unit=product["unit"],
                                        notes=["Recorded stock from counts, deliveries, and sales; not a live shelf sensor."]))
+        elif draft.kind in ("stock_count", "stockout"):
+            from app.services.inventory import on_hand_quantity
+
+            product = connection.execute("SELECT product_id, name, unit FROM products WHERE shop_id = ? AND product_id = ?",
+                                         (current_shop(), draft.product_id)).fetchone()
+            before = on_hand_quantity(connection, product["product_id"])[0] + pending_delta.get(product["product_id"], 0)
+            if draft.kind == "stock_count":
+                pending_delta[product["product_id"]] = pending_delta.get(product["product_id"], 0) + draft.quantity - before
+                actions.append(ProposedAction(
+                    index=len(actions), kind="stock_count", product_id=product["product_id"], product_name=product["name"],
+                    quantity=draft.quantity, unit=product["unit"], on_hand_before=before, on_hand_after=draft.quantity,
+                    summary=f"Physical count: {product['name']} {draft.quantity} {product['unit']} (records show {before} → set to {draft.quantity})",
+                    inferred=draft.inferred,
+                ))
+            else:
+                actions.append(ProposedAction(
+                    index=len(actions), kind="stockout", product_id=product["product_id"], product_name=product["name"],
+                    unit=product["unit"], on_hand_before=before, on_hand_after=before,
+                    summary=f"Stockout noted for {product['name']} (records show {before} {product['unit']}; quantity is not changed — count the shelf to correct it)",
+                    inferred=draft.inferred,
+                ))
+        elif draft.kind == "supplier_balance":
+            from app.services.suppliers import supplier_due
+
+            name = connection.execute("SELECT display_name FROM suppliers WHERE shop_id = ? AND supplier_id = ?",
+                                      (current_shop(), draft.supplier_id)).fetchone()[0]
+            answers.append(AgentAnswer(kind="supplier_balance", supplier_id=draft.supplier_id, supplier_name=name,
+                                       supplier_due_paise=supplier_due(connection, draft.supplier_id)))
+        elif draft.kind == "guidance":
+            answers.append(AgentAnswer(kind="guidance", feature=draft.feature or "other"))
         elif draft.kind in ("payment_summary", "timeline_summary"):
             answers.append(AgentAnswer(kind=draft.kind))
     notes = [note for action in actions for note in action.inferred]
@@ -455,6 +530,10 @@ def _answer_text(answer: AgentAnswer) -> str:
         return f"{answer.customer_name} owes {_rupees(answer.balance_due_paise)}."
     if answer.kind == "stock_check":
         return f"{answer.product_name}: {answer.on_hand_quantity} {answer.unit} recorded."
+    if answer.kind == "supplier_balance":
+        return f"The shop owes {answer.supplier_name} {_rupees(answer.supplier_due_paise)}."
+    if answer.kind == "guidance":
+        return GUIDANCE.get(answer.feature or "other", GUIDANCE["other"])
     return "Opening the payment summary." if answer.kind == "payment_summary" else "Opening today's shop activity."
 
 
@@ -509,31 +588,79 @@ def _amount_correction(connection, context: dict, parsed: agent_parse.Parsed) ->
                   inferred=[f"amount corrected from {_rupees(action['amount_paise'])} to {_rupees(draft.amount_paise)}"])]
 
 
+def _speech_language(text: str) -> str:
+    return "hi-IN" if re.search(r"[ऀ-ॿ]", text or "") else "en-IN"
+
+
+def _word(facts: list[str], merchant_text: str, fallback: str) -> tuple[str, str]:
+    """Let Gemini phrase VERIFIED facts (numbers are validated); otherwise use the template text."""
+    reply, _ = agent_llm.phrase(facts, merchant_text)
+    return (reply, "gemini") if reply else (fallback, "template")
+
+
+def _proposal_reply(actions: list[ProposedAction]) -> str:
+    parts = [a.summary.split(":")[0] + ": " + a.summary.split(":", 1)[1].split(";")[0].strip() if ":" in a.summary else a.summary
+             for a in actions]
+    spoken = "; ".join(parts).replace("→", "to")
+    return "Please check and confirm. " + spoken + ". Nothing is saved until you tap Confirm."
+
+
 def turn(request: AgentTurnRequest) -> AgentTurnResponse:
     utterance = (request.utterance or "").strip()
     if not utterance and request.choice is None:
         raise HTTPException(status_code=422, detail="Say or type a request first.")
+    parsed = agent_parse.parse(utterance) if utterance and request.choice is None else None
+    llm = ProviderStatus(status="disabled", detail="Not needed for this turn.")
+    model_result: tuple[list[Draft], str | None] | None = None
+
+    # Phase 1 — read-only peek, then interpretation with NO database lock held during the Gemini call.
+    if parsed is not None and parsed.control is None:
+        with connect() as peek_connection:
+            peek = (peek_connection.execute("SELECT * FROM agent_sessions WHERE session_id = ?", (request.session_id,)).fetchone()
+                    if request.session_id else None)
+            fresh = peek is not None and peek["shop_id"] == current_shop() and now_utc() - datetime.fromisoformat(peek["updated_at"]) < SESSION_TTL
+            peek_context = _context(peek) if fresh else {}
+            needs_model = _amount_correction(peek_connection, peek_context, parsed) is None
+            if needs_model:
+                customers = [e["name"] for e in _entities(peek_connection, "customer")]
+                products = [e["name"] for e in _entities(peek_connection, "product")]
+                lines = _context_lines(peek_connection, peek_context)
+        if needs_model:
+            llm, data = agent_llm.interpret(utterance, lines, customers, products)
+            if data is not None:
+                model_drafts, corrected, _question = agent_llm.to_drafts(utterance, data)
+                if model_drafts is None:
+                    llm = agent_llm.provider_status("invalid_output", llm.key_slot, llm.attempts)
+                else:
+                    model_result = (model_drafts, corrected)
+
+    # Phase 2 — short write transaction: session, resolution, proposal storage, turn log.
     with connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
         session = _load_session(connection, request.session_id)
         session_id, turn_index = session["session_id"], session["turn_count"] + 1
         context = _context(session)
         pending = json.loads(session["pending_json"]) if session["pending_json"] else None
-        llm = ProviderStatus(status="disabled", detail="Not needed for this turn.")
         transcript = TranscriptView(original=request.transcript_original, used=utterance or (pending or {}).get("utterance", ""))
         interpreted_by = "deterministic"
         wake = False
         drafts: list[Draft] | None = None
+        language = _speech_language(utterance or (pending or {}).get("utterance", ""))
 
-        def finish(status: str, message: str, **extra) -> AgentTurnResponse:
+        def finish(status: str, message: str, reply: str | None = None, **extra) -> AgentTurnResponse:
             intent = next((d.kind for d in (drafts or []) if d.kind), None)
-            _log_turn(connection, session_id, turn_index, request.source_channel,
-                      utterance or f"[choice {request.choice.slot_id}={request.choice.option_id}]" if request.choice else utterance,
-                      wake, intent, status, message, interpreted_by)
+            record = utterance if not request.choice else f"[choice {request.choice.slot_id}={request.choice.option_id}]"
+            _log_turn(connection, session_id, turn_index, request.source_channel, record, wake, intent, status, message, interpreted_by)
             new_pending = extra.pop("_pending", None)
             _save_session(connection, session_id, context, new_pending, turn_index)
             return AgentTurnResponse(session_id=session_id, turn_index=turn_index, status=status, message=message,
-                                     interpreted_by=interpreted_by, llm=llm, transcript=transcript, **extra)
+                                     interpreted_by=interpreted_by, llm=llm, transcript=transcript,
+                                     reply_text=reply or message, reply_language=language, **extra)
+
+        def cancel_pending() -> AgentTurnResponse:
+            connection.execute("UPDATE agent_proposals SET status = 'CANCELLED', updated_at = ? WHERE proposal_id = ? AND status = 'PENDING'",
+                               (now_utc().isoformat(), context.pop("proposal_id")))
+            return finish("cancelled", "Cancelled. Nothing was saved.")
 
         if request.choice is not None:
             if not pending:
@@ -545,12 +672,9 @@ def turn(request: AgentTurnRequest) -> AgentTurnResponse:
         else:
             utterance_for_record = utterance
             _, wake = strip_wake(utterance)
-            parsed = agent_parse.parse(utterance)
             if parsed.control == "cancel":
                 if context.get("proposal_id"):
-                    connection.execute("UPDATE agent_proposals SET status = 'CANCELLED', updated_at = ? WHERE proposal_id = ? AND status = 'PENDING'",
-                                       (now_utc().isoformat(), context.pop("proposal_id")))
-                    return finish("cancelled", "Cancelled. Nothing was saved.")
+                    return cancel_pending()
                 return finish("info", "There is nothing waiting to cancel." if not pending else "Okay, I dropped that question.")
             if parsed.control == "affirm":
                 return finish("info", "Please tap Confirm to save. I do not save on a spoken yes." if context.get("proposal_id")
@@ -558,34 +682,26 @@ def turn(request: AgentTurnRequest) -> AgentTurnResponse:
             drafts = _amount_correction(connection, context, parsed)
             if drafts is not None:
                 interpreted_by = "context"
-            else:
-                customers = [e["name"] for e in _entities(connection, "customer")]
-                products = [e["name"] for e in _entities(connection, "product")]
-                llm, data = agent_llm.interpret(utterance, _context_lines(connection, context), customers, products)
-                model_drafts = None
-                if data is not None:
-                    model_drafts, corrected, question = agent_llm.to_drafts(utterance, data)
-                    if model_drafts is None:
-                        llm = agent_llm.provider_status("invalid_output")
-                    else:
-                        transcript.model_corrected = corrected
-                        if any(d.kind == "cancel" for d in model_drafts) and context.get("proposal_id"):
-                            connection.execute("UPDATE agent_proposals SET status = 'CANCELLED', updated_at = ? WHERE proposal_id = ? AND status = 'PENDING'",
-                                               (now_utc().isoformat(), context.pop("proposal_id")))
-                            interpreted_by = "gemini"
-                            return finish("cancelled", "Cancelled. Nothing was saved.")
-                        model_drafts = [d for d in model_drafts if d.kind not in ("cancel", "confirm")] or None
-                        # A deterministic credit/repayment reading that disagrees with the model → ask, never pick.
-                        det_kinds = {d.kind for d in parsed.drafts if d.kind in ("credit", "repayment")}
-                        model_kinds = {d.kind for d in (model_drafts or []) if d.kind in ("credit", "repayment")}
-                        if det_kinds and model_kinds and det_kinds != model_kinds:
-                            for d in model_drafts:
-                                if d.kind in ("credit", "repayment"):
-                                    d.kind = "conflict"
+            elif model_result is not None:
+                model_drafts, corrected = model_result
+                transcript.model_corrected = corrected
+                interpreted_by = "gemini"
+                if any(d.kind == "cancel" for d in model_drafts) and context.get("proposal_id"):
+                    return cancel_pending()
+                model_drafts = [d for d in model_drafts if d.kind not in ("cancel", "confirm")]
+                # A deterministic credit/repayment reading that disagrees with the model → ask, never pick.
+                det_kinds = {d.kind for d in parsed.drafts if d.kind in ("credit", "repayment")}
+                model_kinds = {d.kind for d in model_drafts if d.kind in ("credit", "repayment")}
+                if det_kinds and model_kinds and det_kinds != model_kinds:
+                    for d in model_drafts:
+                        if d.kind in ("credit", "repayment"):
+                            d.kind = "conflict"
                 if model_drafts:
-                    drafts, interpreted_by = model_drafts, "gemini"
+                    drafts = model_drafts
                 else:
-                    drafts = parsed.drafts
+                    drafts, interpreted_by = parsed.drafts, "deterministic"
+            else:
+                drafts = parsed.drafts
         try:
             _resolve(connection, drafts, context)
             actions, answers, notes = _build_actions(connection, drafts)
@@ -598,12 +714,21 @@ def turn(request: AgentTurnRequest) -> AgentTurnResponse:
         last_action = next((d.kind for d in reversed(drafts) if d.kind in ("credit", "repayment")), None)
         _remember(context, last_customer, _customer_name(connection, last_customer) if last_customer else None, last_action)
         if not actions:
-            return finish("answer", read_text or "Done.", answer=answers[0] if answers else None)
-        proposal = _store_proposal(connection, session_id, context, actions, utterance_for_record, request.source_channel)
-        message = (read_text + " " if read_text else "") + "Please review and confirm: " + "; ".join(a.summary for a in actions) + "."
-        if notes:
-            message += " I inferred: " + "; ".join(notes) + "."
-        return finish("proposal", message, proposal=proposal, answer=answers[0] if answers else None)
+            response = finish("answer", read_text or "Done.", answer=answers[0] if answers else None)
+        else:
+            proposal = _store_proposal(connection, session_id, context, actions, utterance_for_record, request.source_channel)
+            message = (read_text + " " if read_text else "") + "Please review and confirm: " + "; ".join(a.summary for a in actions) + "."
+            if notes:
+                message += " I inferred: " + "; ".join(notes) + "."
+            reply = (read_text + " " if read_text else "") + _proposal_reply(actions)
+            response = finish("proposal", message, reply=reply, proposal=proposal, answer=answers[0] if answers else None)
+
+    # Phase 3 — optional natural wording of a verified read-only answer (after the transaction; numbers validated).
+    if response.status == "answer" and response.answer and response.answer.kind in ("balance", "stock_check", "supplier_balance"):
+        facts = [response.message] + list(response.answer.notes)
+        reply, by = _word(facts, utterance or transcript.used, response.message)
+        response = response.model_copy(update={"reply_text": reply, "reply_worded_by": by})
+    return response
 
 
 def cancel(proposal_id: str) -> dict:
@@ -617,8 +742,28 @@ def cancel(proposal_id: str) -> dict:
         return {"proposal_id": proposal_id, "status": "CANCELLED" if row["status"] == "PENDING" else row["status"]}
 
 
+def _receipt_line(item: AppliedAction) -> str:
+    if item.kind == "customer_create":
+        return f"New customer {item.customer_name} added."
+    if item.kind in ("credit", "repayment"):
+        what = "udhaar" if item.kind == "credit" else "jama"
+        return f"{_rupees(item.amount_paise)} {what} recorded for {item.customer_name}; balance is now {_rupees(item.balance_after_paise)}."
+    if item.kind == "sale":
+        return f"Sale of {item.quantity} {item.unit} {item.product_name} recorded; stock is now {item.on_hand_after} {item.unit}."
+    if item.kind == "stock_count":
+        return f"Count recorded: {item.product_name} is now {item.on_hand_after} {item.unit}."
+    return f"Stockout noted for {item.product_name}; recorded stock is still {item.on_hand_after} {item.unit}."
+
+
 def confirm(proposal_id: str, request: AgentConfirm) -> AgentConfirmResult:
-    """Apply every action of the proposal in ONE transaction. Any failure rolls all of it back."""
+    """Apply every action of the proposal in ONE transaction. Any failure rolls all of it back.
+
+    The receipt (and the spoken reply) is built from values read back from the database after the writes.
+    """
+    from app.domain.models import StockCountCreate, StockoutObservationCreate
+    from app.services.inventory import on_hand_quantity, record_stock_count_in, record_stockout_in
+    from app.services.stock import record_outflows_in
+
     if not request.confirmed:
         raise HTTPException(status_code=409, detail="Explicit merchant confirmation is required.")
     with connect() as connection:
@@ -626,10 +771,12 @@ def confirm(proposal_id: str, request: AgentConfirm) -> AgentConfirmResult:
         row = connection.execute("SELECT * FROM agent_proposals WHERE proposal_id = ? AND shop_id = ?", (proposal_id, current_shop())).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="Proposal not found in this shop.")
+        language = _speech_language(row["source_utterance"])
         if row["status"] == "APPLIED":
             if row["confirm_idempotency_key"] == request.idempotency_key:
-                return AgentConfirmResult(proposal_id=proposal_id, applied=[AppliedAction(**a) for a in json.loads(row["result_json"])],
-                                          idempotent_replay=True)
+                applied = [AppliedAction(**a) for a in json.loads(row["result_json"])]
+                return AgentConfirmResult(proposal_id=proposal_id, applied=applied, idempotent_replay=True,
+                                          reply_text="Already saved. " + " ".join(_receipt_line(a) for a in applied), reply_language=language)
             raise HTTPException(status_code=409, detail={"code": "ALREADY_APPLIED"})
         if row["status"] != "PENDING":
             raise HTTPException(status_code=409, detail={"code": f"PROPOSAL_{row['status']}"})
@@ -644,24 +791,45 @@ def confirm(proposal_id: str, request: AgentConfirm) -> AgentConfirmResult:
         applied: list[AppliedAction] = []
         for action in actions:
             key = f"agent:{proposal_id}:{action.index}"
+            common = dict(index=action.index, kind=action.kind, summary=action.summary)
             if action.kind == "customer_create":
                 created[action.index] = insert_customer_in(connection, action.customer_name, [action.customer_name], key, channel, utterance)
-                applied.append(AppliedAction(index=action.index, kind=action.kind, entity_id=created[action.index], summary=action.summary))
+                applied.append(AppliedAction(entity_id=created[action.index], customer_name=action.customer_name, **common))
             elif action.kind in ("credit", "repayment"):
                 customer_id = action.customer_id or created[action.creates_customer_ref]
                 entry = post_entry_in(connection, LedgerWrite(
                     customer_id=customer_id, amount_paise=action.amount_paise, source_event_id=key, idempotency_key=key,
                     confirmed=True, source_utterance=utterance, source_channel=channel,
                 ), "CREDIT" if action.kind == "credit" else "REPAYMENT")
-                applied.append(AppliedAction(index=action.index, kind=action.kind, entity_id=entry.entry_id, summary=action.summary))
+                applied.append(AppliedAction(entity_id=entry.entry_id, customer_name=action.customer_name,
+                                             amount_paise=entry.amount_paise, **common))
             elif action.kind == "sale":
-                from app.services.stock import record_outflows_in
-
                 batch = record_outflows_in(connection, OutflowBatchWrite(
                     reason="SALE", lines=[OutflowLine(product_id=action.product_id, quantity=action.quantity, unit_text=action.unit)],
                     confirmed=True, idempotency_key=key, source_channel=channel, source_utterance=utterance,
                 ), now_utc())
-                applied.append(AppliedAction(index=action.index, kind=action.kind, entity_id=batch.batch_id, summary=action.summary))
+                applied.append(AppliedAction(entity_id=batch.batch_id, product_name=action.product_name, quantity=action.quantity,
+                                             unit=action.unit, **common))
+            elif action.kind == "stock_count":
+                movement = record_stock_count_in(connection, StockCountCreate(
+                    product_id=action.product_id, counted_quantity=action.quantity, source_event_id=key, idempotency_key=key,
+                    confirmed=True, source_utterance=utterance, source_channel=channel,
+                ))
+                applied.append(AppliedAction(entity_id=movement.movement_id, product_name=action.product_name, quantity=action.quantity,
+                                             unit=action.unit, **common))
+            elif action.kind == "stockout":
+                observation = record_stockout_in(connection, StockoutObservationCreate(
+                    product_id=action.product_id, source_event_id=key, idempotency_key=key, confirmed=True,
+                    source_utterance=utterance, source_channel=channel,
+                ))
+                applied.append(AppliedAction(entity_id=observation.observation_id, product_name=action.product_name, unit=action.unit, **common))
+        # Truth for the receipt: read balances and stock back AFTER every write in this transaction.
+        for item, action in zip(applied, actions):
+            if action.kind in ("credit", "repayment"):
+                item.balance_after_paise = _balance(connection, action.customer_id or created[action.creates_customer_ref])
+            elif action.kind in ("sale", "stock_count", "stockout"):
+                product = connection.execute("SELECT unit FROM products WHERE shop_id = ? AND product_id = ?", (current_shop(), action.product_id)).fetchone()
+                item.on_hand_after, item.unit = on_hand_quantity(connection, action.product_id)[0], product["unit"]
         connection.execute(
             "UPDATE agent_proposals SET status = 'APPLIED', confirm_idempotency_key = ?, result_json = ?, updated_at = ? WHERE proposal_id = ?",
             (request.idempotency_key, json.dumps([a.model_dump() for a in applied], ensure_ascii=False), now_utc().isoformat(), proposal_id),
@@ -676,8 +844,32 @@ def confirm(proposal_id: str, request: AgentConfirm) -> AgentConfirmResult:
             _remember(context, customer_id, last_money.customer_name, last_money.kind)
         connection.execute("UPDATE agent_sessions SET context_json = ?, updated_at = ? WHERE session_id = ?",
                            (json.dumps(context, ensure_ascii=False), now_utc().isoformat(), row["session_id"]))
-        return AgentConfirmResult(proposal_id=proposal_id, applied=applied)
+        lines = [_receipt_line(item) for item in applied]
+        template = "Saved. " + " ".join(lines)
+        source_utterance = row["source_utterance"]
+    # After commit: optional wording of the backend receipt only.
+    reply, by = _word([f"Saved and confirmed by the backend: {line}" for line in lines], source_utterance, template)
+    return AgentConfirmResult(proposal_id=proposal_id, applied=applied, reply_text=reply, reply_language=language, reply_worded_by=by)
+
+
+def speak(request: AgentSpeakRequest) -> AgentSpeakResponse:
+    """Sarvam TTS for a reply the app already shows as text. Audio is returned, never stored."""
+    import base64
+
+    from app.services import sarvam
+
+    language = request.language_code or _speech_language(request.text)
+    try:
+        result = sarvam.synthesize_speech(request.text, language, timeout=20)
+    except sarvam.SpeechUnavailable as error:
+        raise HTTPException(status_code=503, detail={"code": "VOICE_OUTPUT_UNAVAILABLE", "message": str(error)}) from None
+    return AgentSpeakResponse(audio_base64=base64.b64encode(result.audio).decode("ascii"), provider=result.provider,
+                              model=result.model, speaker=result.speaker, language_code=result.language_code)
 
 
 def health(force: bool = False) -> AgentHealth:
-    return AgentHealth(llm=agent_llm.health_check(force), model=agent_llm.model_name(), key_configured=agent_llm._get_api_key() is not None)
+    from app.services import sarvam
+
+    slots = [slot for slot, _ in agent_llm._api_keys()]
+    return AgentHealth(llm=agent_llm.health_check(force), model=agent_llm.model_name(), key_configured=bool(slots),
+                       key_slots_configured=slots, voice_output=sarvam._mode())

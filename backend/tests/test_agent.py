@@ -241,7 +241,7 @@ def test_transcript_original_is_kept(client, shop):
 # --- Gemini (faked) -------------------------------------------------------------------
 
 def fake_gemini(monkeypatch, plan=None, error=None):
-    monkeypatch.setattr(agent_llm, "_get_api_key", lambda: "test-key")
+    monkeypatch.setattr(agent_llm, "_api_keys", lambda: [("GEMINI_API_KEY", "test-key")])
 
     def call(api_key, model, payload, timeout):
         if error:

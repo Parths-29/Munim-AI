@@ -18,10 +18,12 @@ from app.services import agent_parse
 from app.services.agent_parse import Draft
 
 logger = logging.getLogger(__name__)
-DEFAULT_MODEL = "gemini-3.8-flash"
+DEFAULT_MODEL = "gemini-3.6-flash"
+KEY_NAMES = ("GEMINI_API_KEY", "GEMINI_API_KEY_FALLBACK_2", "GEMINI_API_KEY_FALLBACK_3")
+ROTATE_ON = (401, 403, 429)  # auth/permission/quota: another configured key may work. Never on timeouts or outages.
 TIMEOUT_SECONDS = float(os.environ.get("MUNIM_AGENT_LLM_TIMEOUT", "8"))
-KINDS = ["credit", "repayment", "balance", "customer_create", "sale", "stock_check", "payment_summary", "timeline_summary",
-         "cancel", "confirm", "money_action_unclear", "unclear"]
+KINDS = ["credit", "repayment", "balance", "customer_create", "sale", "stock_check", "stock_count", "stockout", "supplier_balance",
+         "payment_summary", "timeline_summary", "other_feature", "cancel", "confirm", "money_action_unclear", "unclear"]
 
 
 def _env_value(name: str) -> str | None:
@@ -41,7 +43,40 @@ def _env_value(name: str) -> str | None:
 
 
 def _get_api_key() -> str | None:
-    return _env_value("GEMINI_API_KEY")
+    keys = _api_keys()
+    return keys[0][1] if keys else None
+
+
+def _api_keys() -> list[tuple[str, str]]:
+    """Configured Gemini keys in rotation order as (slot name, value). Values never leave this module."""
+    keys, seen = [], set()
+    for name in KEY_NAMES:
+        value = _env_value(name)
+        if value and value not in seen:
+            keys.append((name, value))
+            seen.add(value)
+    return keys
+
+
+class RotationExhausted(Exception):
+    def __init__(self, error: urllib.error.HTTPError, attempts: int, slot: str):
+        self.error, self.attempts, self.slot = error, attempts, slot
+
+
+def _call_rotating(model: str, payload: dict, timeout: float) -> tuple[dict, str, int]:
+    """Try configured keys in order, moving on ONLY for auth/quota failures. Returns (body, slot, attempts)."""
+    keys = _api_keys()
+    attempts = 0
+    for slot, key in keys:
+        attempts += 1
+        try:
+            return _call(key, model, payload, timeout), slot, attempts
+        except urllib.error.HTTPError as error:
+            if error.code in ROTATE_ON and attempts < len(keys):
+                logger.warning("Gemini key slot %s returned HTTP %s; trying the next configured key.", slot, error.code)
+                continue
+            raise RotationExhausted(error, attempts, slot) from None
+    raise RuntimeError("no keys")
 
 
 def model_name() -> str:
@@ -64,6 +99,7 @@ SCHEMA = {
                     "kind": {"type": "STRING", "enum": KINDS},
                     "customer_text": {"type": "STRING", "nullable": True},
                     "product_text": {"type": "STRING", "nullable": True},
+                    "supplier_text": {"type": "STRING", "nullable": True},
                     "amount_text": {"type": "STRING", "nullable": True},
                     "quantity_text": {"type": "STRING", "nullable": True},
                     "unit_text": {"type": "STRING", "nullable": True},
@@ -71,7 +107,7 @@ SCHEMA = {
                     "refers_to_previous_action": {"type": "BOOLEAN"},
                     "customer_from_action_index": {"type": "INTEGER", "nullable": True},
                 },
-                "required": ["kind", "customer_text", "product_text", "amount_text", "quantity_text", "unit_text",
+                "required": ["kind", "customer_text", "product_text", "supplier_text", "amount_text", "quantity_text", "unit_text",
                              "refers_to_previous_customer", "refers_to_previous_action", "customer_from_action_index"],
             },
         },
@@ -87,7 +123,10 @@ SYSTEM = (
     "convert amounts, and never invent customers, products, or numbers.\n"
     "Kinds: credit (udhaar given to a customer), repayment (customer paid/jama), balance (how much a customer owes), "
     "customer_create (a new customer), sale (goods sold, reduces stock), stock_check (how much stock is left), "
-    "payment_summary, timeline_summary, cancel (cancel the pending proposal), confirm (spoken yes), "
+    "stock_count (a physical shelf count: product + counted quantity), stockout (product observed finished), "
+    "supplier_balance (how much the shop owes a supplier; supplier_text = supplier name), payment_summary, timeline_summary, "
+    "other_feature (invoice/bill photos, goods received from a supplier, reminders, notebook scans), "
+    "cancel (cancel the pending proposal), confirm (spoken yes), "
     "money_action_unclear (an amount is mentioned but it is not clear whether it is udhaar or jama), unclear.\n"
     "Rules: copy customer_text, product_text, amount_text, quantity_text, unit_text VERBATIM from the request (or from "
     "corrected_utterance if you set it). customer_text is only the person's name with any honorific (e.g. 'Raju bhai'), no "
@@ -140,15 +179,17 @@ def _detail(status: str, model: str) -> str:
     }[status]
 
 
-def provider_status(status: str) -> ProviderStatus:
-    return ProviderStatus(status=status, detail=_detail(status, model_name()))
+def provider_status(status: str, key_slot: str | None = None, attempts: int = 0) -> ProviderStatus:
+    detail = _detail(status, model_name())
+    if status in ("auth_error", "quota") and attempts > 1:
+        detail = f"All {attempts} configured Gemini keys were rejected ({status}). Update the keys in the ignored local .env."
+    return ProviderStatus(status=status, detail=detail, key_slot=key_slot, attempts=attempts)
 
 
 def interpret(utterance: str, context_lines: list[str], customer_names: list[str], product_names: list[str]) -> tuple[ProviderStatus, dict | None]:
     if not enabled():
         return provider_status("disabled"), None
-    api_key = _get_api_key()
-    if not api_key:
+    if not _api_keys():
         return provider_status("not_configured"), None
     prompt = {
         "request": utterance,
@@ -162,23 +203,24 @@ def interpret(utterance: str, context_lines: list[str], customer_names: list[str
         "generationConfig": {"temperature": 0, "responseMimeType": "application/json", "responseSchema": SCHEMA,
                              "maxOutputTokens": 600},
     }
+    slot, attempts = None, 1
     try:
-        body = _call(api_key, model_name(), payload, TIMEOUT_SECONDS)
+        body, slot, attempts = _call_rotating(model_name(), payload, TIMEOUT_SECONDS)
         raw = body["candidates"][0]["content"]["parts"][0]["text"].strip()
         raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw)
         data = json.loads(raw)
         if not isinstance(data, dict) or not isinstance(data.get("actions"), list):
-            return provider_status("invalid_output"), None
-        return provider_status("ok"), data
-    except urllib.error.HTTPError as error:
-        logger.warning("Gemini agent interpretation returned HTTP %s.", error.code)
-        return provider_status(_status_from_http(error.code)), None
+            return provider_status("invalid_output", slot, attempts), None
+        return provider_status("ok", slot, attempts), data
+    except RotationExhausted as exhausted:
+        logger.warning("Gemini agent interpretation returned HTTP %s.", exhausted.error.code)
+        return provider_status(_status_from_http(exhausted.error.code), exhausted.slot, exhausted.attempts), None
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         logger.warning("Gemini agent interpretation unreachable (%s).", type(error).__name__)
-        return provider_status("unreachable"), None
+        return provider_status("unreachable", None, attempts), None
     except Exception as error:  # malformed body, JSON, or schema: never leak content or key
         logger.warning("Gemini agent interpretation invalid (%s).", type(error).__name__)
-        return provider_status("invalid_output"), None
+        return provider_status("invalid_output", slot, attempts), None
 
 
 _HEALTH: dict = {}
@@ -191,18 +233,18 @@ def health_check(force: bool = False) -> ProviderStatus:
         return _HEALTH["status"]
     if not enabled():
         status = provider_status("disabled")
-    elif not _get_api_key():
+    elif not _api_keys():
         status = provider_status("not_configured")
     else:
         payload = {"contents": [{"parts": [{"text": "Reply with the single word OK."}]}],
                    "generationConfig": {"temperature": 0, "maxOutputTokens": 5}}
         try:
-            _call(_get_api_key(), model_name(), payload, TIMEOUT_SECONDS)
-            status = provider_status("ok")
-        except urllib.error.HTTPError as error:
-            status = provider_status(_status_from_http(error.code))
+            _, slot, attempts = _call_rotating(model_name(), payload, TIMEOUT_SECONDS)
+            status = provider_status("ok", slot, attempts)
+        except RotationExhausted as exhausted:
+            status = provider_status(_status_from_http(exhausted.error.code), exhausted.slot, exhausted.attempts)
         except (urllib.error.URLError, TimeoutError, OSError):
-            status = provider_status("unreachable")
+            status = provider_status("unreachable", None, 1)
         except Exception:
             status = provider_status("invalid_output")
     _HEALTH.update(at=now, status=status)
@@ -230,6 +272,7 @@ def to_drafts(utterance: str, data: dict) -> tuple[list[Draft] | None, str | Non
         kind = raw["kind"]
         span = lambda key: raw.get(key).strip() if any(_literal(s, raw.get(key)) for s in sources) else None  # noqa: E731
         draft.customer_text, draft.product_text = span("customer_text"), span("product_text")
+        draft.supplier_text = span("supplier_text")
         draft.pronoun_ref = bool(raw.get("refers_to_previous_customer"))
         draft.continuation = bool(raw.get("refers_to_previous_action"))
         ref = raw.get("customer_from_action_index")
@@ -237,6 +280,9 @@ def to_drafts(utterance: str, data: dict) -> tuple[list[Draft] | None, str | Non
             draft.pronoun_ref = True
         if kind in ("cancel", "confirm"):
             draft.kind = kind
+        elif kind == "other_feature":
+            local = agent_parse.parse_segment(" ".join(sources))
+            draft.kind, draft.feature = "guidance", local.feature or "other"
         elif kind in ("money_action_unclear", "unclear"):
             draft.kind, draft.generic_write = None, True
         else:
@@ -264,3 +310,47 @@ def to_drafts(utterance: str, data: dict) -> tuple[list[Draft] | None, str | Non
             draft.unit_text = unit
         drafts.append(draft)
     return drafts, corrected, question
+
+
+NUMBER_IN_TEXT = re.compile(r"\d[\d,]*(?:\.\d+)?")
+PHRASE_SYSTEM = (
+    "You turn VERIFIED shop facts into one short spoken reply (max 2 sentences) for an Indian shopkeeper. "
+    "Use the same language style as the merchant's request (Hinglish in Latin letters, Hindi, or English). "
+    "Use ONLY the facts given; never add, compute, round, or change any number, name, date, or outcome; never say "
+    "something was saved unless a fact says it was saved. Write money as in the facts (e.g. ₹500). Return JSON {\"reply\": string}."
+)
+
+
+def _numbers(text: str) -> set[str]:
+    return {n.replace(",", "").rstrip(".") for n in NUMBER_IN_TEXT.findall(text)}
+
+
+def phrase(facts: list[str], merchant_text: str, timeout: float = 6) -> tuple[str | None, ProviderStatus]:
+    """Optional natural wording of verified facts. Returns (reply, status); reply None → caller uses its own text.
+
+    Rejected if the reply contains any number not present in the facts (no invented balances or totals).
+    """
+    if not enabled():
+        return None, provider_status("disabled")
+    if not _api_keys():
+        return None, provider_status("not_configured")
+    payload = {
+        "systemInstruction": {"parts": [{"text": PHRASE_SYSTEM}]},
+        "contents": [{"role": "user", "parts": [{"text": json.dumps({"merchant_request": merchant_text, "facts": facts}, ensure_ascii=False)}]}],
+        "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json", "maxOutputTokens": 200,
+                             "responseSchema": {"type": "OBJECT", "properties": {"reply": {"type": "STRING"}}, "required": ["reply"]}},
+    }
+    slot, attempts = None, 1
+    try:
+        body, slot, attempts = _call_rotating(model_name(), payload, timeout)
+        reply = json.loads(body["candidates"][0]["content"]["parts"][0]["text"]).get("reply", "")
+        reply = " ".join(str(reply).split())
+        if not reply or len(reply) > 400 or not _numbers(reply) <= _numbers(" ".join(facts)):
+            return None, provider_status("invalid_output", slot, attempts)
+        return reply, provider_status("ok", slot, attempts)
+    except RotationExhausted as exhausted:
+        return None, provider_status(_status_from_http(exhausted.error.code), exhausted.slot, exhausted.attempts)
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return None, provider_status("unreachable", None, attempts)
+    except Exception:
+        return None, provider_status("invalid_output", slot, attempts)
