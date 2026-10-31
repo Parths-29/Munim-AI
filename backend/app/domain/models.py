@@ -241,7 +241,7 @@ class CommandInterpretResponse(StrictModel):
     count_text: str | None = None
     confidence: float = Field(ge=0, le=1)
     message: str | None = None
-    provider_used: Literal["gemini", "fallback"]
+    provider_used: Literal["sarvam", "fallback"]
     fallback_used: bool
 
 

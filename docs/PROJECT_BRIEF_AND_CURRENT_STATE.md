@@ -57,7 +57,7 @@ Paytm already offers merchant analytics and payment/business tools. The prototyp
 
 1. **Ask or record:** The merchant types a command or records a short voice clip.
 2. **Review transcript:** Sarvam returns text; the merchant can inspect/edit it before sending. Speech recognition can mishear names or numbers.
-3. **Interpret:** A deterministic parser recognizes common supported commands. For an unsupported phrasing, a Gemini service may propose a bounded intent and exact quoted spans. The client validates and reparses the result.
+3. **Interpret:** The backend voice agent (`POST /agent/turn`) asks Gemini for a strict structured plan (one or more actions, verbatim spans, possible transcript correction, explicit use of recent context) and falls back to deterministic Hinglish rules. Application code resolves names (honorifics and spoken variants included), computes paise, and asks one targeted question when anything is missing or ambiguous. The previous on-device parser plus Sarvam `/commands/interpret` remain as a fallback for older backends.
 4. **Resolve:** Customer and product names are matched by exact shop-scoped aliases. Missing or ambiguous matches stop for clarification; the system does not silently choose.
 5. **Preview:** A write shows the exact customer/product, amount/count, and effect before it is saved.
 6. **Confirm:** The merchant explicitly approves. The backend validates the operation and idempotency key.
@@ -83,7 +83,7 @@ Read-only checks and summaries do not need a write confirmation. Credit, repayme
 - The backend forwards audio to Sarvam STT and does not persist the audio. The returned transcript is editable in the app.
 - The merchant reviews the transcript and presses Send. A transcript is not itself permission to change data.
 - Voice and typed text share the same command parser, entity lookup, preview, and confirmation flow.
-- Common phrasing uses deterministic parsing. Gemini command interpretation is an assist for unsupported phrasing; its response is restricted to a supported intent and verbatim entity/amount/count spans. It cannot write to the database.
+- Common phrasing uses deterministic parsing. Sarvam command interpretation assists with unsupported phrasing; its response is restricted to a supported intent and verbatim entity/amount/count spans. It cannot write to the database.
 - Current supported command families include:
   - Customer credit/udhaar and repayment/jama.
   - Customer balance/due lookup.
@@ -94,6 +94,17 @@ Read-only checks and summaries do not need a write confirmation. Credit, repayme
   - Summarize recorded payment events.
   - Summarize recent shop activity/timeline.
 - Voice name and number recognition is not guaranteed. Review and edit the transcript before sending, especially for money and customer names.
+
+#### Voice-first agent (2026-10-31)
+
+- Natural short requests without templates: “Raju ka balance?”, “Raju ko paanch sau udhaar mein likho”, “Meena ne pachaas jama kiye”, “Rajju Sharma naya customer hai, aur uske ₹500 udhaar likho”, “Do Amul packets bech diye”, follow-ups like “Aur 500 add kar do”.
+- Read-only answers (balance, stock) run once the entity resolves; every write is a stored proposal showing customer/product, action, amount/quantity, before → after, and any inferred detail. Confirm applies all actions atomically (`POST /agent/proposals/{id}/confirm`); cancel and amount corrections (“nahi, 600”) are supported; a spoken “haan” never saves.
+- Short per-shop session context (10 minutes) is reused only with a cue (“aur”, “uske”) and is always labelled as inferred.
+- Gemini is primary when `GEMINI_API_KEY` works; otherwise the app says it understood with offline rules. Check with `python -m scripts.check_gemini`.
+- **Spoken replies:** every answer, proposal, question, and confirmed save is shown as text and spoken with Sarvam Bulbul (`POST /agent/speak`; replay/stop/toggle in the app; audio never stored). Replies are built from backend results; after a confirm the receipt uses the balance/stock read back from the database. Gemini (`gemini-3.6-flash` by default) may reword verified facts; any reworded reply with an unverified number is discarded.
+- Gemini key rotation (`GEMINI_API_KEY`, `_FALLBACK_2`, `_FALLBACK_3`) happens only on 401/403/429; never on timeouts or outages.
+- Voice also covers physical stock counts, stockout observations, and supplier dues; photo/inward/reminder flows get honest guidance to their existing APIs.
+- Phone setups (laptop web, Expo Go over LAN, phone browser HTTPS/mic/CORS) and what was verified: [`PHONE_SETUP.md`](PHONE_SETUP.md).
 
 ### 5.3 Inventory memory
 
@@ -166,8 +177,8 @@ If Sarvam misrecognizes a name or amount, correct the editable transcript before
 
 ### External services and data boundaries
 
-- **Sarvam:** Optional speech-to-text. Audio is forwarded for transcription and not stored by this backend.
-- **Gemini:** Optional command interpretation and facts explanation. Current observed calls have returned HTTP 503 or timed out; deterministic fallback is expected when this happens.
+- **Sarvam:** Speech-to-text and command interpretation. Audio is forwarded for transcription and not stored by this backend. Command interpretation uses `sarvam-105b-conversations` by default and can be changed with backend-only `SARVAM_COMMAND_MODEL`.
+- **Gemini:** Separate optional facts explanation and invoice/document extraction. Command interpretation no longer depends on Gemini; explanation/extraction still use their configured Gemini adapters.
 - **MongoDB:** Not used by the implemented prototype. Local app persistence is SQLite.
 - **Paytm:** No production API, merchant dashboard, account, payment feed, or live credentials are connected.
 - **Data:** Synthetic transaction fixture and merchant-entered demo events only. Never commit API keys, customer exports, personal data, or actual payment data.
@@ -191,14 +202,14 @@ This is a mutable demo snapshot, not a hard-coded product promise. Starting with
 - Mobile `npm run typecheck`: passed after current command/summarization work.
 - Backend `python -m compileall -q backend/app`: passed after current service/model changes.
 - `GET /events/summary` smoke check: returned HTTP 200 against both an isolated synthetic database and the preserved local demo database.
-- **Not yet verified for this latest slice:** a fresh full browser/device acceptance run of every new command, real microphone-to-command round trip with a current Sarvam response, physical phone/LAN use, and live Gemini-generated interpretation/explanation.
+- **Verified for the current command change:** live Sarvam structured command interpretation returned a ready repayment draft; the actual local endpoint returns `provider_used=sarvam`. A full browser/device voice round trip and physical phone/LAN use remain unverified. Gemini-generated explanation/extraction remains separate.
 
 See [`BUILD_LOG.md`](BUILD_LOG.md) for dated implementation/audit notes, [`HACKATHON_EXECUTION_PLAN.md`](HACKATHON_EXECUTION_PLAN.md) for phase status, and [`BROWSER_DEMO_WALKTHROUGH.md`](BROWSER_DEMO_WALKTHROUGH.md) for the clean-demo rehearsal.
 
 ## 9. Known limits and risks
 
 1. **Synthetic prototype:** No Paytm production connection, real merchant feed, or live customer data.
-2. **Gemini availability:** Current local requests return intermittent 503/timeouts. Deterministic fallback preserves bounded behavior; the AI-generated path is not currently a reliable demo dependency.
+2. **Provider availability:** Sarvam command interpretation was verified in a live endpoint smoke check; if it becomes unavailable, the endpoint returns a controlled fallback. Gemini explanation and document extraction may still be affected by Gemini availability.
 3. **Speech quality:** STT may mishear Hindi/Hinglish names, product names, and spoken amounts. Transcript review is required. A typed command is the fallback.
 4. **No live sales or stock inference:** UPI collections are not total revenue or profit. Stock is only as current as the last count entered.
 5. **Mock payment feed:** Payment status and ledger repayment are separate. Synthetic tokens are not customer identities.

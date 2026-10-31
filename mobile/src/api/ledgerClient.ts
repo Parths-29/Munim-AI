@@ -1,4 +1,8 @@
 import { Platform } from 'react-native';
+import { File as ExpoFile } from 'expo-file-system';
+
+import { fetchWithTimeout as fetchWithTimeoutBase } from '@/api/http';
+import { nativeUploadPart } from '@/api/nativeUploadPart';
 
 /**
  * Comprehensive Typed client for KiranaOS Backend API v0.5
@@ -12,6 +16,142 @@ import { Platform } from 'react-native';
 
 export const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8000';
+
+// ---------------------------------------------------------------------------
+// Bounded network calls: a spinner must never wait forever.
+// ---------------------------------------------------------------------------
+export { NetworkTimeoutError, BackendUnreachableError } from '@/api/http';
+
+export function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string): Promise<Response> {
+  return fetchWithTimeoutBase(url, init, timeoutMs, label, API_BASE_URL);
+}
+
+async function errorDetail(res: Response, fallback: string): Promise<string> {
+  const body = await res.json().catch(() => null);
+  const detail = body?.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail && typeof detail === 'object') return detail.message ?? detail.code ?? fallback;
+  return fallback;
+}
+
+// ---------------------------------------------------------------------------
+// Voice-first agent (interpret → answer / proposal / question; confirm is atomic)
+// ---------------------------------------------------------------------------
+export interface AgentChoiceOption { option_id: string; label: string; detail: string | null }
+export interface AgentProposedAction {
+  index: number;
+  kind: 'customer_create' | 'credit' | 'repayment' | 'sale';
+  summary: string;
+  customer_name: string | null;
+  amount_paise: number | null;
+  balance_before_paise: number | null;
+  balance_after_paise: number | null;
+  product_name: string | null;
+  quantity: number | null;
+  unit: string | null;
+  on_hand_before: number | null;
+  on_hand_after: number | null;
+  inferred: string[];
+}
+export interface AgentTurnResult {
+  session_id: string;
+  turn_index: number;
+  status: 'answer' | 'proposal' | 'clarification' | 'cancelled' | 'info';
+  message: string;
+  interpreted_by: 'gemini' | 'deterministic' | 'context' | 'choice';
+  llm: { provider: 'gemini'; status: string; detail: string | null };
+  transcript: { original: string | null; used: string; model_corrected: string | null };
+  answer: {
+    kind: 'balance' | 'stock_check' | 'payment_summary' | 'timeline_summary';
+    customer_name: string | null;
+    balance_due_paise: number | null;
+    product_name: string | null;
+    on_hand_quantity: number | null;
+    unit: string | null;
+    notes: string[];
+  } | null;
+  proposal: { proposal_id: string; content_hash: string; actions: AgentProposedAction[]; inferred_notes: string[]; expires_at: string } | null;
+  clarification: { question: string; missing: string[]; slot_id: string | null; choices: AgentChoiceOption[] } | null;
+  reply_text: string;
+  reply_language: string;
+  reply_worded_by: 'gemini' | 'template';
+}
+export interface AgentConfirmResult {
+  proposal_id: string;
+  status: 'APPLIED';
+  applied: {
+    index: number;
+    kind: string;
+    entity_id: string;
+    summary: string;
+    customer_name: string | null;
+    product_name: string | null;
+    amount_paise: number | null;
+    balance_after_paise: number | null;
+    on_hand_after: number | null;
+    unit: string | null;
+  }[];
+  idempotent_replay: boolean;
+  reply_text: string;
+  reply_language: string;
+  reply_worded_by: 'gemini' | 'template';
+}
+
+export interface AgentSpeakResult {
+  audio_base64: string;
+  mime_type: 'audio/wav';
+  provider: string;
+  model: string | null;
+  speaker: string | null;
+  language_code: string;
+  stored: false;
+}
+
+/** Sarvam voice for a reply that is already shown as text. Returned audio is never stored by the backend. */
+export async function agentSpeak(text: string, languageCode: string): Promise<AgentSpeakResult> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/agent/speak`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: text.slice(0, 600), language_code: languageCode }),
+  }, 25_000, 'Voice reply');
+  if (!res.ok) throw new Error(await errorDetail(res, `Voice reply failed with HTTP ${res.status}`));
+  return res.json();
+}
+export class AgentUnavailableError extends Error {}
+
+const AGENT_TIMEOUT_MS = 20_000;
+
+export async function agentTurn(body: {
+  utterance?: string;
+  session_id?: string | null;
+  source_channel?: 'text' | 'voice';
+  transcript_original?: string | null;
+  choice?: { slot_id: string; option_id: string };
+}): Promise<AgentTurnResult> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/agent/turn`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }, AGENT_TIMEOUT_MS, 'Understanding the request');
+  if (res.status === 404) throw new AgentUnavailableError('This backend has no /agent endpoint yet.');
+  if (!res.ok) throw new Error(await errorDetail(res, `Request failed with HTTP ${res.status}`));
+  return res.json();
+}
+
+export async function confirmAgentProposal(proposalId: string, contentHash: string, idempotencyKey: string): Promise<AgentConfirmResult> {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/agent/proposals/${encodeURIComponent(proposalId)}/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirmed: true, content_hash: contentHash, idempotency_key: idempotencyKey }),
+  }, AGENT_TIMEOUT_MS, 'Saving');
+  if (!res.ok) throw new Error(await errorDetail(res, `Saving failed with HTTP ${res.status}`));
+  return res.json();
+}
+
+export async function cancelAgentProposal(proposalId: string): Promise<void> {
+  await fetchWithTimeout(`${API_BASE_URL}/agent/proposals/${encodeURIComponent(proposalId)}/cancel`, { method: 'POST' },
+    AGENT_TIMEOUT_MS, 'Cancelling').catch(() => undefined);
+}
 
 // ---------------------------------------------------------------------------
 // Health
@@ -39,7 +179,7 @@ export interface CommandInterpretResponse {
   count_text: string | null;
   confidence: number;
   message: string | null;
-  provider_used: 'gemini' | 'fallback';
+  provider_used: 'sarvam' | 'fallback';
   fallback_used: boolean;
 }
 
@@ -591,16 +731,17 @@ export async function transcribeMerchantAudio(uri: string): Promise<SpeechTransc
     const normalizedBlob = new Blob([audioBlob], { type: contentType });
     form.append('file', normalizedBlob, `merchant-voice.${extension}`);
   } else {
-    form.append('file', {
-      uri,
-      name: 'merchant-voice.m4a',
-      type: 'audio/mp4',
-    } as unknown as Blob);
+    // Expo Audio records AAC in an .m4a (MPEG-4) container on Android and iOS.
+    // See nativeUploadPart: expo/fetch needs bytes(); a bare { uri } part fails on the phone.
+    const recording = new ExpoFile(uri);
+    if (!recording.exists) throw new Error('The recording file is missing. Please record again.');
+    form.append('file', nativeUploadPart(uri, 'merchant-voice.m4a', 'audio/mp4', () => recording.bytes()) as unknown as Blob);
   }
-  const res = await fetch(`${API_BASE_URL}/speech/transcribe`, {
+  // Sarvam gets 25 s on the backend; allow upload time on top, then fail clearly instead of spinning.
+  const res = await fetchWithTimeout(`${API_BASE_URL}/speech/transcribe`, {
     method: 'POST',
     body: form,
-  });
+  }, 45_000, 'Transcription');
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null);
     throw new Error(errorBody?.detail ?? `Voice transcription failed with HTTP ${res.status}`);

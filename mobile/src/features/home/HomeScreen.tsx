@@ -52,12 +52,19 @@ import {
   fetchLatestMockAction,
   transcribeMerchantAudio,
   interpretMerchantCommand,
+  agentTurn,
+  confirmAgentProposal,
+  cancelAgentProposal,
+  AgentTurnResult,
+  AgentUnavailableError,
   FactsResponse,
   BriefExplanationResponse,
   MockActionResponse,
   ActivitySummaryResponse,
 } from '@/api/ledgerClient';
 import { MerchantCommandIntent, parseMerchantCommand } from '@/features/home/parseMerchantCommand';
+import AgentResultCard from '@/features/home/AgentResultCard';
+import { ReplyVoiceBar, useReplyVoice } from '@/features/home/replyVoice';
 import PaymentReviewScreen from '@/features/paymentReview/PaymentReviewScreen';
 import InventoryScreen from '@/features/inventory/InventoryScreen';
 import TimelineScreen from '@/features/timeline/TimelineScreen';
@@ -103,6 +110,12 @@ function formatRupees(amountPaise: number): string {
 
 const EXAMPLE_PROMPTS = [
   'Aaj kaisa raha?',
+  'Raju ka balance?',
+  'Raju ko paanch sau udhaar mein likho',
+  'Meena ne pachaas jama kiye',
+  'Rajju Sharma naya customer hai, aur uske ₹500 udhaar likho',
+  'Do Amul packets bech diye',
+  'Aur 500 add kar do',
   'Raju bhai ka balance batao',
   'Add new customer Rajju Sharma',
   'How many Maggi packs are left?',
@@ -128,6 +141,16 @@ export default function HomeScreen() {
   const [pendingCommand, setPendingCommand] = useState<PendingCommand | null>(null);
   const [commandFeedback, setCommandFeedback] = useState<CommandFeedback | null>(null);
   const commandBusyRef = useRef(false);
+  // Voice-first agent: one short session (same shop) so follow-ups like "aur 500 add kar do" can be understood.
+  const [agentResult, setAgentResult] = useState<AgentTurnResult | null>(null);
+  const agentSessionRef = useRef<string | null>(null);
+  const agentConfirmKeyRef = useRef<string | null>(null);
+  const rawTranscriptRef = useRef<string | null>(null);
+  const replyVoice = useReplyVoice();
+  const [voiceReplies, setVoiceReplies] = useState(true);
+  const speakReply = (text: string | undefined, language: string | undefined) => {
+    if (voiceReplies && text) void replyVoice.speak(text, language ?? 'en-IN');
+  };
 
   // "Aaj kaisa raha?" end-to-end slice state
   const [insightsBrief, setInsightsBrief] = useState<FactsResponse | null>(null);
@@ -210,6 +233,7 @@ export default function HomeScreen() {
       if (!uri) throw new Error('No audio file was created. Please try again.');
       const result = await transcribeMerchantAudio(uri);
       if (!result.transcript.trim()) throw new Error('No speech was detected. Please try again or type the request.');
+      rawTranscriptRef.current = result.transcript.trim();
       setInput(result.transcript.trim());
       setInputSourceChannel('voice');
       const detectedLanguage = result.language_code ? ` (${result.language_code})` : '';
@@ -228,6 +252,7 @@ export default function HomeScreen() {
 
   const startVoiceRecording = async () => {
     if (loading || voiceBusy || recorderState.isRecording) return;
+    replyVoice.stop();
     try {
       const permission = await AudioModule.requestRecordingPermissionsAsync();
       if (!permission.granted) {
@@ -369,6 +394,91 @@ export default function HomeScreen() {
   };
 
   const handleRunMerchantCommand = async (utterance: string, sourceChannel: 'text' | 'voice' = 'text') => {
+    if (commandBusyRef.current) return;
+    setPendingCommand(null);
+    setCommandFeedback(null);
+    setAgentResult(null);
+    commandBusyRef.current = true;
+    setLoading(true);
+    let useLocalFlow = false;
+    try {
+      const result = await agentTurn({
+        utterance,
+        session_id: agentSessionRef.current,
+        source_channel: sourceChannel,
+        transcript_original: sourceChannel === 'voice' ? rawTranscriptRef.current : null,
+      });
+      agentSessionRef.current = result.session_id;
+      agentConfirmKeyRef.current = null;
+      if (result.answer?.kind === 'payment_summary' || result.answer?.kind === 'timeline_summary') {
+        useLocalFlow = true; // the existing summary views already render these
+      } else {
+        setAgentResult(result);
+        speakReply(result.reply_text, result.reply_language);
+      }
+    } catch (err: unknown) {
+      if (err instanceof AgentUnavailableError) {
+        useLocalFlow = true; // older backend without /agent: keep the previous on-device flow
+      } else {
+        const message = err instanceof Error ? err.message : String(err);
+        setCommandFeedback({ tone: 'error', title: 'Could Not Understand Right Now', message: `${message} Nothing was recorded.` });
+      }
+    } finally {
+      commandBusyRef.current = false;
+      setLoading(false);
+    }
+    if (sourceChannel === 'voice') rawTranscriptRef.current = null;
+    if (useLocalFlow) await runLocalCommand(utterance, sourceChannel);
+  };
+
+  const handleAgentChoose = async (slotId: string, optionId: string) => {
+    if (commandBusyRef.current || !agentSessionRef.current) return;
+    commandBusyRef.current = true;
+    setLoading(true);
+    try {
+      const result = await agentTurn({ session_id: agentSessionRef.current, choice: { slot_id: slotId, option_id: optionId } });
+      agentSessionRef.current = result.session_id;
+      agentConfirmKeyRef.current = null;
+      setAgentResult(result);
+      speakReply(result.reply_text, result.reply_language);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setCommandFeedback({ tone: 'error', title: 'Could Not Apply Choice', message: `${message} Nothing was recorded.` });
+    } finally {
+      commandBusyRef.current = false;
+      setLoading(false);
+    }
+  };
+
+  const handleAgentConfirm = async () => {
+    const proposal = agentResult?.proposal;
+    if (!proposal || commandBusyRef.current) return;
+    if (!agentConfirmKeyRef.current) agentConfirmKeyRef.current = `agent_confirm_${proposal.proposal_id}_${Date.now()}`;
+    commandBusyRef.current = true;
+    setLoading(true);
+    try {
+      const saved = await confirmAgentProposal(proposal.proposal_id, proposal.content_hash, agentConfirmKeyRef.current);
+      setAgentResult(null);
+      // Built by the backend from values read back after the write committed.
+      setCommandFeedback({ tone: 'success', title: 'Saved', message: saved.reply_text });
+      speakReply(saved.reply_text, saved.reply_language);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setCommandFeedback({ tone: 'error', title: 'Not Saved', message: `${message} Nothing was changed.` });
+    } finally {
+      commandBusyRef.current = false;
+      setLoading(false);
+    }
+  };
+
+  const handleAgentCancel = async () => {
+    const proposal = agentResult?.proposal;
+    setAgentResult(null);
+    setCommandFeedback({ tone: 'info', title: 'Cancelled', message: 'Nothing was recorded.' });
+    if (proposal) await cancelAgentProposal(proposal.proposal_id);
+  };
+
+  const runLocalCommand = async (utterance: string, sourceChannel: 'text' | 'voice' = 'text') => {
     let parsed = parseMerchantCommand(utterance);
     setPendingCommand(null);
     setCommandFeedback(null);
@@ -1018,6 +1128,18 @@ export default function HomeScreen() {
                 <Text style={styles.commandFeedbackTitle}>{commandFeedback.title}</Text>
                 <Text style={styles.commandFeedbackText}>{commandFeedback.message}</Text>
               </View>
+            )}
+
+            <ReplyVoiceBar voice={replyVoice} enabled={voiceReplies} onToggle={() => { replyVoice.stop(); setVoiceReplies((on) => !on); }} />
+
+            {agentResult && (
+              <AgentResultCard
+                result={agentResult}
+                busy={loading}
+                onConfirm={handleAgentConfirm}
+                onCancel={handleAgentCancel}
+                onChoose={handleAgentChoose}
+              />
             )}
 
             {pendingCommand && (

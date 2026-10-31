@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.customers import router as customers_router
 from app.api.actions import router as actions_router
+from app.api.agent import router as agent_router
 from app.api.commands import router as commands_router
 from app.api.events import router as events_router
 from app.api.health import router as health_router
@@ -110,3 +111,4 @@ app.include_router(invoices_router)
 app.include_router(inward_router)
 app.include_router(reminders_router)
 app.include_router(ledger_pages_router)
+app.include_router(agent_router)

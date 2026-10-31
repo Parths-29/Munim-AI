@@ -32,8 +32,13 @@ export type ParsedMerchantCommand =
       message: string;
     };
 
-const CREDIT_TERMS = /\b(?:udhaar|credit|borrowed|lend)\b/i;
-const REPAYMENT_TERMS = /\b(?:jamma|jama|repay(?:ment)?|paid|received|vasool(?:i)?)\b/i;
+const CREDIT_TERMS = /\b(?:udhaar|udhar|udhari|udhaari|credit|borrowed|lend)\b/i;
+const REPAYMENT_TERMS = /\b(?:jamma|jama|jamaa|repay(?:ment)?|paid|received|vasool(?:i)?)\b/i;
+// Generic "write it down" verbs. On their own they do not say whether money was given (udhaar) or received (jama).
+const GENERIC_LEDGER_VERBS = /\b(?:add|likh(?:o|do|na)?|note|daal(?:o|do)?|dalo|chadha(?:o|do)?|entry)\b/i;
+// A number directly followed by one of these is a quantity, never rupees.
+const QUANTITY_UNIT_AFTER = /^\s*(?:packets?|pkts?|packs?|pieces?|pcs|kg|kilo|grams?|gm|g|litres?|liters?|ltr|bottles?|units?|items?|dozen|darjan)\b/i;
+const EXPLICIT_RUPEE_AMOUNT = /₹\s*\d|\b(?:rs\.?|inr)\s*\d|\d[\d,]*(?:\.\d+)?\s*(?:rupees?|rupaye|rupay|rupya|rs)\b/i;
 const BALANCE_TERMS = /\b(?:balance|baki|baaki|due|owes?|outstanding)\b|kitna\s+udhaar/i;
 const STOCKOUT_TERMS = /\b(?:khatam|stockout|sold\s+out|out\s+of\s+stock)\b/i;
 const CUSTOMER_CREATE_TERMS = /\b(?:add|create|register)\s+(?:a\s+)?(?:new\s+)?customer\b|\bnew\s+customer\b|\bcustomer\s+(?:add|create|register)\b|\b(?:naya|nayi)\s+(?:grahak|customer)\b|\b(?:grahak|customer)\s+(?:jodo|banao|bana\s+do)\b/i;
@@ -218,7 +223,7 @@ function normalizeDigits(value: string): string {
 function cleanEntityQuery(value: string): string {
   return value
     .replace(/[₹,?!।.؛،]/g, ' ')
-    .replace(/\b(?:udhaar|credit|borrowed|lend|jamma|jama|repay(?:ment)?|paid|received|vasool(?:i)?|balance|baki|baaki|due|owe|owes|outstanding|khatam|stockout|sold|out|of|stock|inventory|available|remaining|left|bache|packs?|pieces?|bottles?|units?|physical|count|counted|ginti|quantity|new|add|create|register|customer|grahak|naya|nayi|jodo|banao|bana|do|how|many|much|is|are|the|what|show|check|please|tell|me|does|can|you|named|called|name|kitne|kitna|hai|hain|ka|ki|ke|ko|ne|batao|bata|set|put|to|by|voice)\b/gi, ' ')
+    .replace(/\b(?:udhaar|udhar|udhari|udhaari|credit|borrowed|lend|jamma|jama|jamaa|repay(?:ment)?|paid|received|vasool(?:i)?|balance|baki|baaki|due|owe|owes|outstanding|khatam|stockout|sold|out|of|stock|inventory|available|remaining|left|bache|packs?|pieces?|bottles?|units?|physical|count|counted|ginti|quantity|new|add|create|register|customer|grahak|naya|nayi|jodo|banao|bana|do|how|many|much|is|are|the|what|show|check|please|tell|me|does|can|you|named|called|name|kitne|kitna|hai|hain|ka|ki|ke|ko|ne|batao|bata|set|put|to|by|voice)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -239,12 +244,71 @@ function amountToPaise(rawAmount: string): number | null {
 function cleanCustomerQuery(value: string): string {
   return cleanEntityQuery(value)
     .replace(/\b(?:rupees?|rupaye|rupay|rupya|rs\.?|ho|gaya|gayi|likh|kar|lo|de|dena|for|ka|ki|ke|ko|ne|of)\b/gi, ' ')
+    // Hinglish command verbs and fillers that speech often adds around a name ("karo", "kro", "likho", "kiye", "naam par").
+    .replace(/\b(?:karo|kro|krdo|kardo|karde|kardena|kariye|kijiye|karna|kiye|kiya|likho|likhdo|likhna|note|daalo|daal|dalo|chadhao|chadha|entry|naam|par|pe|khate|khata|mein|me)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 function clarification(message: string): ParsedMerchantCommand {
   return { status: 'clarification', message };
+}
+
+function editDistance(left: string, right: string): number {
+  const row = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i += 1) {
+    let previous = row[0];
+    row[0] = i;
+    for (let j = 1; j <= right.length; j += 1) {
+      const saved = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, previous + (left[i - 1] === right[j - 1] ? 0 : 1));
+      previous = saved;
+    }
+  }
+  return row[right.length];
+}
+
+/** Words that look like a misheard Hindi number ("pachs" → pachas 50 / pachis 25). Reported, never converted. */
+export function uncertainNumberWords(text: string): { word: string; candidates: { word: string; value: number }[] }[] {
+  const found: { word: string; candidates: { word: string; value: number }[] }[] = [];
+  for (const token of text.toLowerCase().match(/[a-z]+/g) ?? []) {
+    if (token.length < 4 || Object.hasOwn(HINDI_NUMBER_WORDS, token) || Object.hasOwn(NUMBER_SCALE_WORDS, token)) continue;
+    if (!cleanCustomerQuery(token)) continue; // a known command/filler word (udhaar, jama, karo, ...), not a number
+    const limit = token.length >= 6 ? 2 : 1;
+    const candidates = Object.entries(HINDI_NUMBER_WORDS)
+      .filter(([word]) => word.length >= 4 && editDistance(token, word) <= limit)
+      .map(([word, value]) => ({ word, value }))
+      .filter((candidate, index, all) => all.findIndex((other) => other.value === candidate.value) === index)
+      .slice(0, 3);
+    if (candidates.length) found.push({ word: token, candidates });
+  }
+  return found;
+}
+
+/** One specific follow-up naming exactly what is missing. Nothing is guessed or carried over from earlier commands. */
+function ledgerFollowUp(text: string, action: 'credit' | 'repayment' | null, amountKnown = false): string {
+  const hasAmount = amountKnown || EXPLICIT_RUPEE_AMOUNT.test(text);
+  const uncertain = uncertainNumberWords(text);
+  const uncertainWords = new Set(uncertain.map((item) => item.word));
+  const customerGuess = cleanCustomerQuery(text.replace(/[₹]?\s*\d[\d,]*(?:\.\d+)?/g, ' '))
+    .split(' ')
+    .filter((word) => word && !uncertainWords.has(word.toLowerCase()))
+    .join(' ');
+  const missing: string[] = [];
+  if (!customerGuess) missing.push('which customer it is for');
+  if (!action) missing.push('whether it is udhaar (credit given) or jama (payment received)');
+  if (!hasAmount) missing.push('the amount in rupees');
+  const parts = missing.length
+    ? [`Please tell me ${missing.length > 1 ? `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}` : missing[0]}.`]
+    : ['Please say the command again with the customer, udhaar or jama, and the rupee amount.'];
+  if (!hasAmount && uncertain.length) {
+    const { word, candidates } = uncertain[0];
+    parts.push(`“${word}” might be a number (${candidates.map((c) => `${c.word} = ${c.value}`).join(' or ')}), so I did not use it as an amount.`);
+  }
+  if (!customerGuess) parts.push('I do not carry the customer over from an earlier command.');
+  const example = action === 'repayment' ? '“Raju ne pachaas rupaye jama kiye”' : '“Raju ko pachaas rupaye udhaar add karo”';
+  parts.push(`For example: ${example}.`);
+  return parts.join(' ');
 }
 
 export function parseMerchantCommand(utterance: string): ParsedMerchantCommand {
@@ -313,6 +377,10 @@ export function parseMerchantCommand(utterance: string): ParsedMerchantCommand {
       : clarification('Whose balance should I check? Try “Raju bhai ka balance batao.”');
   }
 
+  if (!wantsCredit && !wantsRepayment && GENERIC_LEDGER_VERBS.test(text)) {
+    return clarification(ledgerFollowUp(text, null));
+  }
+
   if (!wantsCredit && !wantsRepayment) {
     return {
       status: 'unsupported',
@@ -320,9 +388,10 @@ export function parseMerchantCommand(utterance: string): ParsedMerchantCommand {
     };
   }
 
+  const action = wantsCredit ? 'credit' : 'repayment';
   const numberMatches = [...text.matchAll(MONEY_TOKENS)];
   if (numberMatches.length === 0) {
-    return clarification('I could not find an amount. For Hindi speech, say the number with “rupaye”, for example “das rupaye”.');
+    return clarification(ledgerFollowUp(text, action));
   }
   if (numberMatches.length > 1) {
     return clarification('I found more than one amount. Please say one amount, for example “Raju bhai ka das rupaye udhaar likh do.”');
@@ -337,9 +406,12 @@ export function parseMerchantCommand(utterance: string): ParsedMerchantCommand {
 
   const beforeAmount = text.slice(0, amountMatch.index);
   const afterAmount = text.slice((amountMatch.index ?? 0) + rawAmount.length);
+  if (QUANTITY_UNIT_AFTER.test(afterAmount)) {
+    return clarification(`“${rawAmount}${afterAmount.match(QUANTITY_UNIT_AFTER)?.[0] ?? ''}” is a quantity, not rupees. Say the rupee amount, for example “Raju ko 30 rupaye udhaar likh do”.`);
+  }
   const customerQuery = cleanCustomerQuery(`${beforeAmount} ${afterAmount}`);
   if (!customerQuery) {
-    return clarification('Which customer is this for? Include their name, for example “Raju bhai ka ₹50 udhaar.”');
+    return clarification(ledgerFollowUp(text, action, true));
   }
   if (customerQuery.length > 100) {
     return clarification('That customer name is too long. Please use a shorter exact name or alias.');

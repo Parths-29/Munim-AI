@@ -123,70 +123,75 @@ def record_outflows(request: OutflowBatchWrite, occurred_at: datetime | None = N
     moment = (occurred_at or now_utc()).astimezone(timezone.utc)
     with connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
-        existing = connection.execute(
-            "SELECT * FROM stock_outflow_movements WHERE shop_id = ? AND batch_id = (SELECT batch_id FROM stock_outflow_movements WHERE idempotency_key = ?)",
-            (current_shop(), f"{request.idempotency_key}:0"),
-        ).fetchall()
-        if existing:
-            same = (len(existing) == len(request.lines) and existing[0]["reason"] == request.reason
-                    and all(row["product_id"] == line.product_id and row["entered_quantity"] == line.quantity
-                            for row, line in zip(sorted(existing, key=lambda r: r["idempotency_key"]), request.lines)))
-            if not same:
-                raise HTTPException(status_code=409, detail="Idempotency key was already used for a different stock batch.")
-            return _batch_view(connection, existing[0]["batch_id"], replay=True)
+        return record_outflows_in(connection, request, moment)
 
-        batch_id = f"outbatch_{uuid.uuid4().hex[:12]}"
-        running: dict[str, int] = {}
-        for index, line in enumerate(request.lines):
-            product = _product(connection, line.product_id)
-            base_unit = product["unit"]
-            unit = canonical_unit(line.unit_text) or canonical_unit(base_unit)
-            if unit == canonical_unit(base_unit):
-                factor = 1
-            else:
-                factor = stored_conversion(connection, line.product_id, unit)
-                if factor is None:
-                    raise HTTPException(status_code=422, detail={
-                        "code": "UNIT_CONVERSION_UNKNOWN",
-                        "message": f"How many {base_unit} are in 1 {unit} of {product['name']}? Save a unit conversion first.",
-                    })
-            base_quantity = line.quantity * factor
-            if line.product_id not in running:
-                running[line.product_id] = on_hand_quantity(connection, line.product_id)[0]
-            if base_quantity > running[line.product_id]:
-                raise HTTPException(status_code=409, detail={
-                    "code": "INSUFFICIENT_RECORDED_STOCK",
-                    "product_id": line.product_id,
-                    "product_name": product["name"],
-                    "recorded_on_hand": running[line.product_id],
-                    "requested": base_quantity,
-                    "message": f"Records show only {running[line.product_id]} {base_unit} of {product['name']}. Count the shelf to correct stock first.",
+
+def record_outflows_in(connection: sqlite3.Connection, request: OutflowBatchWrite, moment: datetime) -> OutflowBatchView:
+    """The outflow batch body, inside the caller's transaction (used by atomic multi-action confirms)."""
+    existing = connection.execute(
+        "SELECT * FROM stock_outflow_movements WHERE shop_id = ? AND batch_id = (SELECT batch_id FROM stock_outflow_movements WHERE idempotency_key = ?)",
+        (current_shop(), f"{request.idempotency_key}:0"),
+    ).fetchall()
+    if existing:
+        same = (len(existing) == len(request.lines) and existing[0]["reason"] == request.reason
+                and all(row["product_id"] == line.product_id and row["entered_quantity"] == line.quantity
+                        for row, line in zip(sorted(existing, key=lambda r: r["idempotency_key"]), request.lines)))
+        if not same:
+            raise HTTPException(status_code=409, detail="Idempotency key was already used for a different stock batch.")
+        return _batch_view(connection, existing[0]["batch_id"], replay=True)
+
+    batch_id = f"outbatch_{uuid.uuid4().hex[:12]}"
+    running: dict[str, int] = {}
+    for index, line in enumerate(request.lines):
+        product = _product(connection, line.product_id)
+        base_unit = product["unit"]
+        unit = canonical_unit(line.unit_text) or canonical_unit(base_unit)
+        if unit == canonical_unit(base_unit):
+            factor = 1
+        else:
+            factor = stored_conversion(connection, line.product_id, unit)
+            if factor is None:
+                raise HTTPException(status_code=422, detail={
+                    "code": "UNIT_CONVERSION_UNKNOWN",
+                    "message": f"How many {base_unit} are in 1 {unit} of {product['name']}? Save a unit conversion first.",
                 })
-            running[line.product_id] -= base_quantity
-            price = line.unit_price_paise
-            if price is None and request.reason == "SALE":
-                profile = latest_profile(connection, line.product_id)
-                price = profile["retail_price_paise"] if profile else None
-                if price is not None and factor != 1:
-                    price *= factor  # selling price is per base unit
-            amount = price * line.quantity if price is not None else None
-            connection.execute(
-                """INSERT INTO stock_outflow_movements (movement_id, shop_id, batch_id, product_id, quantity_delta, unit,
-                   entered_quantity, entered_unit, reason, unit_price_paise, amount_paise, source_channel, source_utterance,
-                   source_event_id, idempotency_key, status, occurred_at, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?)""",
-                (f"omove_{uuid.uuid4().hex[:12]}", current_shop(), batch_id, line.product_id, -base_quantity, base_unit,
-                 line.quantity, unit, request.reason, price, amount, request.source_channel, request.source_utterance,
-                 f"outflow:{batch_id}:{index}", f"{request.idempotency_key}:{index}", moment.isoformat(), now_utc().isoformat()),
-            )
-        names = ", ".join(f"{line.quantity} {_product(connection, line.product_id)['name']}" for line in request.lines)
-        append_event(
-            connection, event_type=f"STOCK_{request.reason}_RECORDED", entity_type="STOCK_OUTFLOW", entity_id=batch_id,
-            source_event_id=f"outflow:{batch_id}", source_channel=request.source_channel,
-            source_utterance=request.source_utterance, status="POSTED",
-            summary=f"{request.reason.replace('_', ' ').title()} recorded: {names}.", idempotency_key=f"{request.idempotency_key}:event",
+        base_quantity = line.quantity * factor
+        if line.product_id not in running:
+            running[line.product_id] = on_hand_quantity(connection, line.product_id)[0]
+        if base_quantity > running[line.product_id]:
+            raise HTTPException(status_code=409, detail={
+                "code": "INSUFFICIENT_RECORDED_STOCK",
+                "product_id": line.product_id,
+                "product_name": product["name"],
+                "recorded_on_hand": running[line.product_id],
+                "requested": base_quantity,
+                "message": f"Records show only {running[line.product_id]} {base_unit} of {product['name']}. Count the shelf to correct stock first.",
+            })
+        running[line.product_id] -= base_quantity
+        price = line.unit_price_paise
+        if price is None and request.reason == "SALE":
+            profile = latest_profile(connection, line.product_id)
+            price = profile["retail_price_paise"] if profile else None
+            if price is not None and factor != 1:
+                price *= factor  # selling price is per base unit
+        amount = price * line.quantity if price is not None else None
+        connection.execute(
+            """INSERT INTO stock_outflow_movements (movement_id, shop_id, batch_id, product_id, quantity_delta, unit,
+               entered_quantity, entered_unit, reason, unit_price_paise, amount_paise, source_channel, source_utterance,
+               source_event_id, idempotency_key, status, occurred_at, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?)""",
+            (f"omove_{uuid.uuid4().hex[:12]}", current_shop(), batch_id, line.product_id, -base_quantity, base_unit,
+             line.quantity, unit, request.reason, price, amount, request.source_channel, request.source_utterance,
+             f"outflow:{batch_id}:{index}", f"{request.idempotency_key}:{index}", moment.isoformat(), now_utc().isoformat()),
         )
-        return _batch_view(connection, batch_id)
+    names = ", ".join(f"{line.quantity} {_product(connection, line.product_id)['name']}" for line in request.lines)
+    append_event(
+        connection, event_type=f"STOCK_{request.reason}_RECORDED", entity_type="STOCK_OUTFLOW", entity_id=batch_id,
+        source_event_id=f"outflow:{batch_id}", source_channel=request.source_channel,
+        source_utterance=request.source_utterance, status="POSTED",
+        summary=f"{request.reason.replace('_', ' ').title()} recorded: {names}.", idempotency_key=f"{request.idempotency_key}:event",
+    )
+    return _batch_view(connection, batch_id)
 
 
 def _batch_view(connection, batch_id: str, replay: bool = False) -> OutflowBatchView:

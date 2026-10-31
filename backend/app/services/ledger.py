@@ -46,29 +46,37 @@ def create_customer(request: CustomerCreate) -> CustomerView:
                 raise HTTPException(status_code=409, detail="Idempotency key was already used with different customer aliases.")
             return _customer_view(connection, replay["customer_id"])
 
-        customer_id = f"cust_{uuid.uuid4().hex[:12]}"
-        connection.execute(
-            "INSERT INTO customers(customer_id, shop_id, display_name, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?)",
-            (customer_id, current_shop(), display_name, key, now),
-        )
-        for alias in aliases:
-            connection.execute(
-                "INSERT INTO customer_aliases(alias_id, shop_id, customer_id, alias, alias_normalized) VALUES (?, ?, ?, ?, ?)",
-                (f"alias_{uuid.uuid4().hex[:12]}", current_shop(), customer_id, alias, normalize_alias(alias)),
-            )
-        append_event(
-            connection,
-            event_type="CUSTOMER_CREATED",
-            entity_type="CUSTOMER",
-            entity_id=customer_id,
-            source_event_id=key,
-            source_channel=request.source_channel,
-            source_utterance=request.source_utterance,
-            status="POSTED",
-            summary=f"Customer record created for {display_name}.",
-            idempotency_key=key,
-        )
+        customer_id = insert_customer_in(connection, display_name, aliases, key, request.source_channel, request.source_utterance, now)
         return _customer_view(connection, customer_id)
+
+
+def insert_customer_in(connection: sqlite3.Connection, display_name: str, aliases: list[str], key: str,
+                       source_channel: str, source_utterance: str | None, now: str | None = None) -> str:
+    """Insert a customer, aliases, and event inside the caller's transaction. Returns the new customer_id."""
+    now = now or datetime.now(timezone.utc).isoformat()
+    customer_id = f"cust_{uuid.uuid4().hex[:12]}"
+    connection.execute(
+        "INSERT INTO customers(customer_id, shop_id, display_name, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?)",
+        (customer_id, current_shop(), display_name, key, now),
+    )
+    for alias in dict.fromkeys(aliases):
+        connection.execute(
+            "INSERT INTO customer_aliases(alias_id, shop_id, customer_id, alias, alias_normalized) VALUES (?, ?, ?, ?, ?)",
+            (f"alias_{uuid.uuid4().hex[:12]}", current_shop(), customer_id, alias, normalize_alias(alias)),
+        )
+    append_event(
+        connection,
+        event_type="CUSTOMER_CREATED",
+        entity_type="CUSTOMER",
+        entity_id=customer_id,
+        source_event_id=key,
+        source_channel=source_channel,
+        source_utterance=source_utterance,
+        status="POSTED",
+        summary=f"Customer record created for {display_name}.",
+        idempotency_key=key,
+    )
+    return customer_id
 
 
 def resolve_customer(query: str) -> CustomerResolution:
@@ -125,70 +133,75 @@ def _post_ledger_entry(request: LedgerWrite, entry_type: str) -> LedgerEntryView
     if not request.confirmed:
         raise HTTPException(status_code=409, detail="Merchant confirmation is required before posting a ledger entry.")
 
-    now = datetime.now(timezone.utc).isoformat()
-    entry_id = f"entry_{uuid.uuid4().hex[:12]}"
     with connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
-        existing_rows = connection.execute(
-            "SELECT * FROM ledger_entries WHERE idempotency_key = ? OR (shop_id = ? AND source_event_id = ?) LIMIT 2",
-            (request.idempotency_key, current_shop(), request.source_event_id),
-        ).fetchall()
-        if len(existing_rows) > 1:
-            raise HTTPException(status_code=409, detail="Idempotency key and source event resolve to different ledger entries.")
-        if existing_rows:
-            existing = existing_rows[0]
-            same_operation = (
-                existing["customer_id"] == request.customer_id
-                and existing["entry_type"] == entry_type
-                and existing["amount_paise"] == request.amount_paise
-                and existing["source_event_id"] == request.source_event_id
-            )
-            if not same_operation:
-                raise HTTPException(status_code=409, detail="Idempotency key was already used for a different ledger operation.")
-            return _entry_view(existing, idempotent_replay=True)
+        return post_entry_in(connection, request, entry_type)
 
-        customer = connection.execute(
-            "SELECT customer_id FROM customers WHERE shop_id = ? AND customer_id = ?",
+
+def post_entry_in(connection: sqlite3.Connection, request: LedgerWrite, entry_type: str) -> LedgerEntryView:
+    """Validate and append one ledger entry inside the caller's transaction (idempotent; repayment <= balance)."""
+    now = datetime.now(timezone.utc).isoformat()
+    entry_id = f"entry_{uuid.uuid4().hex[:12]}"
+    existing_rows = connection.execute(
+        "SELECT * FROM ledger_entries WHERE idempotency_key = ? OR (shop_id = ? AND source_event_id = ?) LIMIT 2",
+        (request.idempotency_key, current_shop(), request.source_event_id),
+    ).fetchall()
+    if len(existing_rows) > 1:
+        raise HTTPException(status_code=409, detail="Idempotency key and source event resolve to different ledger entries.")
+    if existing_rows:
+        existing = existing_rows[0]
+        same_operation = (
+            existing["customer_id"] == request.customer_id
+            and existing["entry_type"] == entry_type
+            and existing["amount_paise"] == request.amount_paise
+            and existing["source_event_id"] == request.source_event_id
+        )
+        if not same_operation:
+            raise HTTPException(status_code=409, detail="Idempotency key was already used for a different ledger operation.")
+        return _entry_view(existing, idempotent_replay=True)
+
+    customer = connection.execute(
+        "SELECT customer_id FROM customers WHERE shop_id = ? AND customer_id = ?",
+        (current_shop(), request.customer_id),
+    ).fetchone()
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Customer not found in this demo shop.")
+
+    if entry_type == "REPAYMENT":
+        balance = connection.execute(
+            """SELECT COALESCE(SUM(CASE entry_type WHEN 'CREDIT' THEN amount_paise WHEN 'REPAYMENT' THEN -amount_paise END), 0)
+               FROM ledger_entries WHERE shop_id = ? AND customer_id = ? AND status = 'POSTED'""",
             (current_shop(), request.customer_id),
-        ).fetchone()
-        if customer is None:
-            raise HTTPException(status_code=404, detail="Customer not found in this demo shop.")
+        ).fetchone()[0]
+        if request.amount_paise > int(balance):
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "REPAYMENT_EXCEEDS_BALANCE", "balance_due_paise": int(balance), "requested_paise": request.amount_paise},
+            )
 
-        if entry_type == "REPAYMENT":
-            balance = connection.execute(
-                """SELECT COALESCE(SUM(CASE entry_type WHEN 'CREDIT' THEN amount_paise WHEN 'REPAYMENT' THEN -amount_paise END), 0)
-                   FROM ledger_entries WHERE shop_id = ? AND customer_id = ? AND status = 'POSTED'""",
-                (current_shop(), request.customer_id),
-            ).fetchone()[0]
-            if request.amount_paise > int(balance):
-                raise HTTPException(
-                    status_code=409,
-                    detail={"code": "REPAYMENT_EXCEEDS_BALANCE", "balance_due_paise": int(balance), "requested_paise": request.amount_paise},
-                )
+    connection.execute(
+        """INSERT INTO ledger_entries
+           (entry_id, shop_id, customer_id, entry_type, amount_paise, source_event_id, idempotency_key, status, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'POSTED', ?)""",
+        (entry_id, current_shop(), request.customer_id, entry_type, request.amount_paise, request.source_event_id, request.idempotency_key, now),
+    )
+    row = connection.execute("SELECT * FROM ledger_entries WHERE entry_id = ?", (entry_id,)).fetchone()
+    append_event(
+        connection,
+        event_type=f"{entry_type}_POSTED",
+        entity_type="LEDGER_ENTRY",
+        entity_id=entry_id,
+        source_event_id=request.source_event_id,
+        source_channel=request.source_channel,
+        source_utterance=request.source_utterance,
+        status="POSTED",
+        summary=f"{entry_type.title()} of {request.amount_paise} paise recorded.",
+        idempotency_key=request.idempotency_key,
+    )
+    if entry_type == "REPAYMENT":
+        from app.services.reminders import cancel_reminders_if_settled  # lazy: avoids import cycle
 
-        connection.execute(
-            """INSERT INTO ledger_entries
-               (entry_id, shop_id, customer_id, entry_type, amount_paise, source_event_id, idempotency_key, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'POSTED', ?)""",
-            (entry_id, current_shop(), request.customer_id, entry_type, request.amount_paise, request.source_event_id, request.idempotency_key, now),
-        )
-        row = connection.execute("SELECT * FROM ledger_entries WHERE entry_id = ?", (entry_id,)).fetchone()
-        append_event(
-            connection,
-            event_type=f"{entry_type}_POSTED",
-            entity_type="LEDGER_ENTRY",
-            entity_id=entry_id,
-            source_event_id=request.source_event_id,
-            source_channel=request.source_channel,
-            source_utterance=request.source_utterance,
-            status="POSTED",
-            summary=f"{entry_type.title()} of {request.amount_paise} paise recorded.",
-            idempotency_key=request.idempotency_key,
-        )
-        if entry_type == "REPAYMENT":
-            from app.services.reminders import cancel_reminders_if_settled  # lazy: avoids import cycle
-
-            cancel_reminders_if_settled(connection, request.customer_id)
+        cancel_reminders_if_settled(connection, request.customer_id)
     return _entry_view(row)
 
 

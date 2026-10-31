@@ -21,7 +21,7 @@
 | DB | `backend/app/services/database.py` | One SQLite file (`MUNIM_DB_PATH` override). `connect()` is autocommit-off-by-hand (`isolation_level=None`), commits on success, rolls back on exception. Schema is one `CREATE … IF NOT EXISTS` script; **no migration versioning**. |
 | Append-only | DB triggers | `ledger_entries`, `inventory_movements`, `business_events`, payments, mock actions reject UPDATE/DELETE. |
 | Resolution | `ledger.normalize_alias`, `inventory._normalize` | NFKC + casefold + whitespace collapse; exact alias match; `RESOLVED / AMBIGUOUS / NOT_FOUND`. |
-| AI | `command_nlp.py`, `explainer.py` | Gemini via `urllib`, `GEMINI_MODEL` override, 8 s timeout, literal-span validation, deterministic fallback. Keys read from env or ignored `.env`. |
+| AI | `command_nlp.py`, `explainer.py` | Sarvam Chat Completions for command interpretation (`SARVAM_COMMAND_MODEL`, default `sarvam-105b-conversations`) with JSON-schema and literal-span validation; Gemini remains for facts explanation. Keys read from env or ignored `.env`. |
 | Speech | `speech.py` | Sarvam, audio in memory only, 12 MB cap. |
 
 ### Constraints that shape the design

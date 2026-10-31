@@ -376,7 +376,7 @@ npm ci
 
 - Copy root `.env.example` to root `.env` on the friend’s machine. `.env` is ignored by Git.
 - `SARVAM_API_KEY`: needed only to use live Sarvam speech transcription.
-- `GEMINI_API_KEY`: optional for Gemini command assist, facts explanation, and proposed image extraction. The provider has recently returned 503/timeouts; core deterministic behavior must still work.
+- `GEMINI_API_KEY`: optional for facts explanation and proposed image/document extraction. Command interpretation uses Sarvam Chat Completions with `SARVAM_API_KEY`.
 - `GEMINI_MODEL`: optional configurable model name only if implementation adds/uses it; do not assume a model is enabled for the account.
 - `MUNIM_DB_PATH`: optional local SQLite path for an isolated demo database. Use a new timestamped path for experiments; never point at the original user DB on the friend’s laptop.
 - `MONGODB_URI`: **not required**. MongoDB is not used by the current backend; leave blank.

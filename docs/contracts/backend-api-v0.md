@@ -8,11 +8,42 @@ Expo Web development origins default to `http://localhost:8081` and `http://127.
 
 ## `POST /commands/interpret`
 
-Optional read-only NLP assist for a typed command or an already-created speech transcript. The client calls it only when its deterministic parser cannot classify the request. It returns a structured draft (`intent`, exact `entity_text`, exact `amount_text`, and confidence) or asks for clarification. It never resolves IDs or writes to the ledger/inventory. The client re-parses the returned spans locally, then uses the same exact-entity lookup, preview, and explicit confirmation flow as other commands. If Gemini is missing or unavailable, the route returns a controlled fallback after an 8-second request timeout. `GEMINI_MODEL` can override the default `gemini-3.8-flash` model ID.
+Optional read-only NLP assist for a typed command or an already-created speech transcript. The client calls it only when its deterministic parser cannot classify the request. It uses Sarvam Chat Completions (`sarvam-105b-conversations` by default; configurable with backend-only `SARVAM_COMMAND_MODEL`) and requests schema-constrained JSON. It returns a structured draft (`intent`, exact `entity_text`, exact `amount_text`, and confidence) or asks for clarification. It never resolves IDs or writes to the ledger/inventory. The client re-parses the returned spans locally, then uses the same exact-entity lookup, preview, and explicit confirmation flow as other commands. If Sarvam is missing or unavailable, the route returns a controlled fallback. The backend-only `SARVAM_API_KEY` is shared with speech transcription and is never sent to the mobile app.
 
 Request: `{ "utterance": "what does Raju owe?", "source_channel": "text" }`. A successful interpretation returns `status: "ready"`, `intent: "balance"`, `entity_text: "Raju"`, `amount_text: null`, and a confidence score. For credit/repayment, `amount_text` must quote an explicit rupee amount from the utterance. A fallback returns `status: "unavailable"` and `provider_used: "fallback"`.
 
-The prompt uses a small set of synthetic Hinglish/English command examples stored in `backend/app/services/command_nlp.py`. These are few-shot examples only; they do not train or fine-tune Gemini. No ledger rows, transaction history, customer IDs, or product IDs are sent to Gemini. When enabled, the submitted utterance itself is sent to Google's Gemini API, so users should avoid including unrelated sensitive details.
+The prompt uses a small set of synthetic Hinglish/English command examples stored in `backend/app/services/command_nlp.py`. These are prompt examples only; they do not train or fine-tune a model. No ledger rows, transaction history, customer IDs, or product IDs are sent to Sarvam. When enabled, the submitted utterance itself is sent to Sarvam for interpretation, so users should avoid including unrelated sensitive details.
+
+## Voice-first agent (`/agent`)
+
+One turn in → one answer, reviewable proposal, or targeted question out. **Turns never write** (`writes_performed: false`).
+
+- `POST /agent/turn` — body `{ "utterance": "Raju ko paanch sau udhaar mein likho", "session_id": null, "source_channel": "voice", "transcript_original": "raju ko panch sau udhar me likho" }`, or a choice `{ "session_id": "...", "choice": { "slot_id": "customer:0", "option_id": "cust_..." } }`.
+  Response: `session_id`, `turn_index`, `status` (`answer` | `proposal` | `clarification` | `cancelled` | `info`), `message`,
+  `interpreted_by` (`gemini` | `deterministic` | `context` | `choice`), `llm` `{status, detail}` (`ok`, `disabled`, `not_configured`,
+  `unreachable`, `auth_error`, `model_not_found`, `quota`, `bad_request`, `server_error`, `invalid_output`), `transcript`
+  `{original, used, model_corrected}`, and one of:
+  - `answer` — `balance` (customer + `balance_due_paise`), `stock_check` (product + `on_hand_quantity`), or `payment_summary` / `timeline_summary` (client opens the existing views).
+  - `proposal` — `proposal_id`, `content_hash`, `actions[]` (`customer_create` | `credit` | `repayment` | `sale`, each with a summary, resolved names, `amount_paise` / quantity, before/after balance or stock, and `inferred[]` notes), `expires_at` (15 min).
+  - `clarification` — `question`, `missing[]`, optional `slot_id` + `choices[]` (answer with a `choice` turn, or just say the detail).
+- `POST /agent/proposals/{id}/confirm` — `{ "confirmed": true, "content_hash": "...", "idempotency_key": "..." }`. Applies **every** action in one SQLite transaction (customer + ledger + stock, same validation as the single endpoints); any failure rolls all of them back and the proposal stays `PENDING`. Same key → `idempotent_replay`; a different key after applying → `409 ALREADY_APPLIED`. Also `409 PROPOSAL_CANCELLED | PROPOSAL_SUPERSEDED | PROPOSAL_EXPIRED | PROPOSAL_CHANGED`.
+- `POST /agent/proposals/{id}/cancel` — marks a pending proposal cancelled.
+- `GET /agent/health?refresh=true` — Gemini connectivity via a tiny synthetic request; reports the category, model, configured key **slot names** (`GEMINI_API_KEY`, `GEMINI_API_KEY_FALLBACK_2`, `GEMINI_API_KEY_FALLBACK_3`), the slot that answered, attempts, and voice-output mode (`live` | `fake` | `off`). Never key values.
+- `POST /agent/speak` — `{ "text": "Raju bhai owes ₹500.", "language_code": "en-IN" }` → `{ audio_base64 (WAV), mime_type, provider, model, speaker, language_code, stored: false }`. Sarvam Bulbul (`SARVAM_TTS_MODEL`, default `bulbul:v3`; `SARVAM_TTS_SPEAKER`, default `shubh`; one retry on `bulbul:v2`/`anushka` if the account rejects the model). `503 VOICE_OUTPUT_UNAVAILABLE` with a clear message on missing key, quota, timeout, or outage; timeouts are not retried. Audio is never stored.
+
+**Spoken replies:** every turn returns `reply_text` (what to speak), `reply_language`, and `reply_worded_by` (`template` | `gemini`). Read-only replies come from backend results; Gemini may reword them, but a wording containing any number not in the verified facts is discarded. `POST /agent/proposals/{id}/confirm` returns `applied[]` with `amount_paise`, `balance_after_paise` / `on_hand_after` **read back from the database after the writes**, and a `reply_text` receipt such as “Saved. ₹500 udhaar recorded for Raju bhai; balance is now ₹1,000.” A proposal reply always says nothing is saved until Confirm.
+
+**Key rotation:** configured Gemini keys are tried in order only for HTTP 401/403/429. Timeouts, network errors, and 5xx return immediately (no duplicate requests). The status reports `key_slot` and `attempts`.
+
+**Capabilities via voice:** balance, udhaar/credit, jama/repayment, customer creation (also “Add Rajju as a customer and put ₹500 udhaar in his khata”), sales, stock check, physical stock count, stockout observation, supplier dues (read-only), payment/activity summaries. Invoice photos, quick inward deliveries, reminders, and notebook scans return honest guidance to their existing APIs.
+
+**Interpretation:** Gemini (`GEMINI_API_KEY`, `GEMINI_MODEL`, backend `.env` only) returns a strict JSON plan with verbatim spans; the
+deterministic Hinglish parser is the fallback. Gemini never chooses IDs or amounts: application code resolves names (exact alias →
+honorific-stripped, e.g. “Raju” → “Raju bhai” → spoken variant, e.g. “Raaju”, shown as an inference), converts amount spans to integer
+paise, requires an udhaar/jama word before choosing credit vs repayment, and asks when a name or product is ambiguous or a word is a
+possible number (“pachs” → pachis 25 / pachas 50). **Context:** per session and shop, last customer/action for 10 minutes; reused only
+with a cue (“aur”, “uske”) and shown as `inferred`; otherwise offered as a choice. A spoken “haan” never confirms; “cancel” cancels the
+pending proposal; “nahi, 600” corrects a single pending amount.
 
 ## `POST /speech/transcribe`
 

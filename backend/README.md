@@ -40,6 +40,10 @@ For Expo Web, local CORS origins default to `http://localhost:8081` and `http://
 
 ## Current endpoints
 
+**Voice-first agent:** `POST /agent/turn`, `POST /agent/proposals/{id}/confirm` (atomic, idempotent), `POST /agent/proposals/{id}/cancel`,
+`GET /agent/health`. See [`docs/contracts/backend-api-v0.md`](../docs/contracts/backend-api-v0.md#voice-first-agent-agent) and
+[`docs/PHONE_SETUP.md`](../docs/PHONE_SETUP.md). Check Gemini with `python -m scripts.check_gemini` (prints a status, never the key).
+
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/health` | Local API liveness and synthetic-only mode. |

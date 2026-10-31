@@ -121,48 +121,54 @@ def record_stockout_observation(request: StockoutObservationCreate) -> StockoutO
     now = datetime.now(timezone.utc).isoformat()
     with connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
-        product = connection.execute(
-            "SELECT product_id FROM products WHERE shop_id = ? AND product_id = ?",
-            (current_shop(), request.product_id),
-        ).fetchone()
-        if product is None:
-            raise HTTPException(status_code=404, detail="Product not found in this demo shop.")
-        existing_rows = connection.execute(
-            """SELECT * FROM stockout_observations
-               WHERE idempotency_key = ? OR (shop_id = ? AND source_event_id = ?) LIMIT 2""",
-            (request.idempotency_key, current_shop(), request.source_event_id),
-        ).fetchall()
-        if len(existing_rows) > 1:
-            raise HTTPException(status_code=409, detail="Idempotency key and source event resolve to different observations.")
-        if existing_rows:
-            existing = existing_rows[0]
-            if existing["product_id"] != request.product_id or existing["source_utterance"] != request.source_utterance:
-                raise HTTPException(status_code=409, detail="Idempotency key was already used for a different stockout observation.")
-            return _stockout_view(existing, idempotent_replay=True)
+        return record_stockout_in(connection, request)
 
-        observation_id = f"stockout_{uuid.uuid4().hex[:12]}"
-        connection.execute(
-            """INSERT INTO stockout_observations
-               (observation_id, shop_id, product_id, source_event_id, idempotency_key, source_utterance, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'OBSERVED', ?)""",
-            (observation_id, current_shop(), request.product_id, request.source_event_id, request.idempotency_key, request.source_utterance, now),
-        )
-        append_event(
-            connection,
-            event_type="STOCKOUT_OBSERVED",
-            entity_type="PRODUCT",
-            entity_id=request.product_id,
-            source_event_id=request.source_event_id,
-            source_channel=request.source_channel,
-            source_utterance=request.source_utterance,
-            status="OBSERVED",
-            summary="Merchant reported a stockout; on-hand quantity has not been changed.",
-            idempotency_key=request.idempotency_key,
-        )
-        row = connection.execute(
-            "SELECT * FROM stockout_observations WHERE observation_id = ?",
-            (observation_id,),
-        ).fetchone()
+
+def record_stockout_in(connection, request: StockoutObservationCreate) -> StockoutObservationView:
+    """Body of record_stockout_observation inside the caller's transaction (used by atomic agent confirms)."""
+    now = datetime.now(timezone.utc).isoformat()
+    product = connection.execute(
+        "SELECT product_id FROM products WHERE shop_id = ? AND product_id = ?",
+        (current_shop(), request.product_id),
+    ).fetchone()
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found in this demo shop.")
+    existing_rows = connection.execute(
+        """SELECT * FROM stockout_observations
+           WHERE idempotency_key = ? OR (shop_id = ? AND source_event_id = ?) LIMIT 2""",
+        (request.idempotency_key, current_shop(), request.source_event_id),
+    ).fetchall()
+    if len(existing_rows) > 1:
+        raise HTTPException(status_code=409, detail="Idempotency key and source event resolve to different observations.")
+    if existing_rows:
+        existing = existing_rows[0]
+        if existing["product_id"] != request.product_id or existing["source_utterance"] != request.source_utterance:
+            raise HTTPException(status_code=409, detail="Idempotency key was already used for a different stockout observation.")
+        return _stockout_view(existing, idempotent_replay=True)
+
+    observation_id = f"stockout_{uuid.uuid4().hex[:12]}"
+    connection.execute(
+        """INSERT INTO stockout_observations
+           (observation_id, shop_id, product_id, source_event_id, idempotency_key, source_utterance, status, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'OBSERVED', ?)""",
+        (observation_id, current_shop(), request.product_id, request.source_event_id, request.idempotency_key, request.source_utterance, now),
+    )
+    append_event(
+        connection,
+        event_type="STOCKOUT_OBSERVED",
+        entity_type="PRODUCT",
+        entity_id=request.product_id,
+        source_event_id=request.source_event_id,
+        source_channel=request.source_channel,
+        source_utterance=request.source_utterance,
+        status="OBSERVED",
+        summary="Merchant reported a stockout; on-hand quantity has not been changed.",
+        idempotency_key=request.idempotency_key,
+    )
+    row = connection.execute(
+        "SELECT * FROM stockout_observations WHERE observation_id = ?",
+        (observation_id,),
+    ).fetchone()
     return _stockout_view(row)
 
 
@@ -172,48 +178,54 @@ def record_stock_count(request: StockCountCreate) -> InventoryMovementView:
     now = datetime.now(timezone.utc).isoformat()
     with connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
-        product = connection.execute(
-            "SELECT product_id, name, unit FROM products WHERE shop_id = ? AND product_id = ?",
-            (current_shop(), request.product_id),
-        ).fetchone()
-        if product is None:
-            raise HTTPException(status_code=404, detail="Product not found in this demo shop.")
-        existing_rows = connection.execute(
-            """SELECT * FROM inventory_movements
-               WHERE idempotency_key = ? OR (shop_id = ? AND source_event_id = ?) LIMIT 2""",
-            (request.idempotency_key, current_shop(), request.source_event_id),
-        ).fetchall()
-        if len(existing_rows) > 1:
-            raise HTTPException(status_code=409, detail="Idempotency key and source event resolve to different stock movements.")
-        if existing_rows:
-            existing = existing_rows[0]
-            if existing["product_id"] != request.product_id or existing["counted_quantity"] != request.counted_quantity:
-                raise HTTPException(status_code=409, detail="Idempotency key was already used for a different stock count.")
-            return _movement_view(existing, idempotent_replay=True)
+        return record_stock_count_in(connection, request)
 
-        current_quantity, _ = on_hand_quantity(connection, request.product_id)
-        delta = request.counted_quantity - current_quantity
-        movement_id = f"movement_{uuid.uuid4().hex[:12]}"
-        connection.execute(
-            """INSERT INTO inventory_movements
-               (movement_id, shop_id, product_id, quantity_delta, counted_quantity, unit, reason,
-                source_event_id, idempotency_key, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'PHYSICAL_COUNT', ?, ?, 'POSTED', ?)""",
-            (movement_id, current_shop(), request.product_id, delta, request.counted_quantity, product["unit"], request.source_event_id, request.idempotency_key, now),
-        )
-        append_event(
-            connection,
-            event_type="STOCK_COUNT_RECORDED",
-            entity_type="PRODUCT",
-            entity_id=request.product_id,
-            source_event_id=request.source_event_id,
-            source_channel=request.source_channel,
-            source_utterance=request.source_utterance,
-            status="POSTED",
-            summary=f"Physical count recorded: {request.counted_quantity} {product['unit']} of {product['name']}.",
-            idempotency_key=request.idempotency_key,
-        )
-        row = connection.execute("SELECT * FROM inventory_movements WHERE movement_id = ?", (movement_id,)).fetchone()
+
+def record_stock_count_in(connection, request: StockCountCreate) -> InventoryMovementView:
+    """Body of record_stock_count inside the caller's transaction (used by atomic agent confirms)."""
+    now = datetime.now(timezone.utc).isoformat()
+    product = connection.execute(
+        "SELECT product_id, name, unit FROM products WHERE shop_id = ? AND product_id = ?",
+        (current_shop(), request.product_id),
+    ).fetchone()
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found in this demo shop.")
+    existing_rows = connection.execute(
+        """SELECT * FROM inventory_movements
+           WHERE idempotency_key = ? OR (shop_id = ? AND source_event_id = ?) LIMIT 2""",
+        (request.idempotency_key, current_shop(), request.source_event_id),
+    ).fetchall()
+    if len(existing_rows) > 1:
+        raise HTTPException(status_code=409, detail="Idempotency key and source event resolve to different stock movements.")
+    if existing_rows:
+        existing = existing_rows[0]
+        if existing["product_id"] != request.product_id or existing["counted_quantity"] != request.counted_quantity:
+            raise HTTPException(status_code=409, detail="Idempotency key was already used for a different stock count.")
+        return _movement_view(existing, idempotent_replay=True)
+
+    current_quantity, _ = on_hand_quantity(connection, request.product_id)
+    delta = request.counted_quantity - current_quantity
+    movement_id = f"movement_{uuid.uuid4().hex[:12]}"
+    connection.execute(
+        """INSERT INTO inventory_movements
+           (movement_id, shop_id, product_id, quantity_delta, counted_quantity, unit, reason,
+            source_event_id, idempotency_key, status, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'PHYSICAL_COUNT', ?, ?, 'POSTED', ?)""",
+        (movement_id, current_shop(), request.product_id, delta, request.counted_quantity, product["unit"], request.source_event_id, request.idempotency_key, now),
+    )
+    append_event(
+        connection,
+        event_type="STOCK_COUNT_RECORDED",
+        entity_type="PRODUCT",
+        entity_id=request.product_id,
+        source_event_id=request.source_event_id,
+        source_channel=request.source_channel,
+        source_utterance=request.source_utterance,
+        status="POSTED",
+        summary=f"Physical count recorded: {request.counted_quantity} {product['unit']} of {product['name']}.",
+        idempotency_key=request.idempotency_key,
+    )
+    row = connection.execute("SELECT * FROM inventory_movements WHERE movement_id = ?", (movement_id,)).fetchone()
     return _movement_view(row)
 
 

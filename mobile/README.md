@@ -17,7 +17,7 @@
    - Credit, repayment, and stockout requests show a preview and require explicit confirmation. Backend writes use idempotency keys.
    - If a credit customer is not found, the preview says that confirmation will create that exact customer and post the credit. Missing repayment/balance customers and missing products are not created automatically.
    - Stockout is recorded as an observation; on-hand quantity stays unchanged until a physical count is confirmed.
-   - The deterministic parser stays first. If it cannot classify a request, the backend can ask Gemini for exact quoted intent/entity/amount spans; the client re-parses those spans and still requires exact entity resolution and merchant confirmation. Synthetic prompt examples guide phrasing but do not train Gemini. The facts explainer and command assist both fall back when Gemini is unavailable.
+   - The deterministic parser stays first. If it cannot classify a request, the backend asks Sarvam Chat Completions for a schema-constrained intent and exact entity/amount spans; the client re-parses those spans and still requires exact entity resolution and merchant confirmation. The facts explainer remains a separate Gemini-backed feature with deterministic fallback.
    - Voice button records up to 20 seconds, sends the clip to the backend for Sarvam transliteration, and places the transcript in the editable input. The merchant reviews and taps send; ledger writes still show the existing preview and require confirmation. Audio is removed from the app cache after transcription.
 
 2. **Payment Review (`PaymentReviewScreen`):**
@@ -115,9 +115,19 @@ Install `@expo/ngrok` if prompted (`npm install -g @expo/ngrok`).
 npm run typecheck
 ```
 
+## Command parser tests
+
+```bash
+npm test
+```
+
+Runs the deterministic Hinglish command parser tests with Node's built-in test runner (no extra dependencies).
+
 ---
 
 ## Environment variables & Phone Demo Connection
+
+**Full, tested setup for laptop web, Expo Go on a phone, and the phone browser (HTTPS/mic/CORS): [docs/PHONE_SETUP.md](../docs/PHONE_SETUP.md).**
 
 Configure `EXPO_PUBLIC_API_BASE_URL` in `mobile/.env`:
 
