@@ -14,8 +14,12 @@ def temp_db(tmp_path, monkeypatch):
     path = tmp_path / "munim-test.sqlite3"
     monkeypatch.setattr(database, "DB_PATH", path)
     # Tests must never reach live providers even if a developer has local keys.
-    for name in ("GEMINI_API_KEY", "SARVAM_API_KEY", "MUNIM_ADMIN_TOKEN", "MUNIM_INVOICE_PROVIDER", "MUNIM_INWARD_LLM"):
+    for name in ("GEMINI_API_KEY", "SARVAM_API_KEY", "MUNIM_ADMIN_TOKEN", "MUNIM_INVOICE_PROVIDER", "MUNIM_INWARD_LLM",
+                 "MUNIM_NOTEBOOK_PROVIDER"):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("MUNIM_SARVAM_MODE", "fake")  # offline translate/TTS; never the live API in tests
+    monkeypatch.setattr("app.services.speech._api_key", lambda: None)
+    monkeypatch.setattr("app.services.sarvam._api_key", lambda: None)
     for target in ("explainer", "command_nlp", "inward_parser", "invoice_extraction"):
         monkeypatch.setattr(f"app.services.{target}._get_api_key", lambda: None)
 

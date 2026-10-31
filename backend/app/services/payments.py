@@ -14,7 +14,7 @@ from app.domain.models import (
     PayerMappingCreate,
     PayerMappingView,
 )
-from app.services.database import DEMO_SHOP_ID, connect
+from app.services.database import connect, current_shop
 from app.services.events import append_event
 
 
@@ -26,13 +26,13 @@ def create_payer_mapping(request: PayerMappingCreate) -> PayerMappingView:
         connection.execute("BEGIN IMMEDIATE")
         customer = connection.execute(
             "SELECT customer_id FROM customers WHERE shop_id = ? AND customer_id = ?",
-            (DEMO_SHOP_ID, request.customer_id),
+            (current_shop(), request.customer_id),
         ).fetchone()
         if customer is None:
             raise HTTPException(status_code=404, detail="Customer not found in this demo shop.")
         existing = connection.execute(
             "SELECT * FROM payer_customer_mappings WHERE idempotency_key = ? OR (shop_id = ? AND payer_token = ?) LIMIT 2",
-            (request.idempotency_key, DEMO_SHOP_ID, request.payer_token),
+            (request.idempotency_key, current_shop(), request.payer_token),
         ).fetchall()
         if len(existing) > 1:
             raise HTTPException(status_code=409, detail="Mapping key and payer token resolve to different records.")
@@ -45,7 +45,7 @@ def create_payer_mapping(request: PayerMappingCreate) -> PayerMappingView:
         mapping_id = f"mapping_{uuid.uuid4().hex[:12]}"
         connection.execute(
             "INSERT INTO payer_customer_mappings(mapping_id, shop_id, payer_token, customer_id, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (mapping_id, DEMO_SHOP_ID, request.payer_token, request.customer_id, request.idempotency_key, now),
+            (mapping_id, current_shop(), request.payer_token, request.customer_id, request.idempotency_key, now),
         )
         append_event(
             connection,
@@ -71,7 +71,7 @@ def intake_payment(request: PaymentIntakeCreate) -> PaymentIntakeView:
         connection.execute("BEGIN IMMEDIATE")
         existing = connection.execute(
             "SELECT * FROM payment_events WHERE idempotency_key = ? OR (shop_id = ? AND event_id = ?) LIMIT 2",
-            (request.idempotency_key, DEMO_SHOP_ID, request.event_id),
+            (request.idempotency_key, current_shop(), request.event_id),
         ).fetchall()
         if len(existing) > 1:
             raise HTTPException(status_code=409, detail="Idempotency key and payment event ID resolve to different records.")
@@ -99,7 +99,7 @@ def intake_payment(request: PaymentIntakeCreate) -> PaymentIntakeView:
         else:
             mapping = connection.execute(
                 "SELECT customer_id FROM payer_customer_mappings WHERE shop_id = ? AND payer_token = ?",
-                (DEMO_SHOP_ID, request.payer_token),
+                (current_shop(), request.payer_token),
             ).fetchone()
             if mapping is None:
                 resolution_status, reason = "UNMATCHED", "payer_token_not_mapped"
@@ -108,7 +108,7 @@ def intake_payment(request: PaymentIntakeCreate) -> PaymentIntakeView:
                 balance = int(connection.execute(
                     """SELECT COALESCE(SUM(CASE entry_type WHEN 'CREDIT' THEN amount_paise WHEN 'REPAYMENT' THEN -amount_paise END), 0)
                        FROM ledger_entries WHERE shop_id = ? AND customer_id = ? AND status = 'POSTED'""",
-                    (DEMO_SHOP_ID, customer_id),
+                    (current_shop(), customer_id),
                 ).fetchone()[0])
                 if balance <= 0:
                     resolution_status, reason = "REVIEW", "no_outstanding_balance"
@@ -123,7 +123,7 @@ def intake_payment(request: PaymentIntakeCreate) -> PaymentIntakeView:
                         """INSERT INTO ledger_entries
                            (entry_id, shop_id, customer_id, entry_type, amount_paise, source_event_id, idempotency_key, status, created_at)
                            VALUES (?, ?, ?, 'REPAYMENT', ?, ?, ?, 'POSTED', ?)""",
-                        (allocation_entry_id, DEMO_SHOP_ID, customer_id, request.amount_paise, allocation_source_id, allocation_key, now),
+                        (allocation_entry_id, current_shop(), customer_id, request.amount_paise, allocation_source_id, allocation_key, now),
                     )
                     append_event(
                         connection,
@@ -146,7 +146,7 @@ def intake_payment(request: PaymentIntakeCreate) -> PaymentIntakeView:
                (event_id, shop_id, amount_paise, payment_status, occurred_at, payer_token, source, idempotency_key,
                 resolution_status, resolution_reason, allocation_entry_id, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (request.event_id, DEMO_SHOP_ID, request.amount_paise, request.status, occurred_at, request.payer_token,
+            (request.event_id, current_shop(), request.amount_paise, request.status, occurred_at, request.payer_token,
              request.source, request.idempotency_key, resolution_status, reason, allocation_entry_id, now),
         )
         append_event(
@@ -173,7 +173,7 @@ def list_payment_review(limit: int = 50) -> list[PaymentReviewView]:
                FROM payment_events p WHERE p.shop_id = ? AND p.resolution_status IN ('REVIEW', 'UNMATCHED')
                  AND NOT EXISTS (SELECT 1 FROM payment_resolutions r WHERE r.shop_id = p.shop_id AND r.event_id = p.event_id)
                ORDER BY p.created_at DESC LIMIT ?""",
-            (DEMO_SHOP_ID, bounded_limit),
+            (current_shop(), bounded_limit),
         ).fetchall()
     return [
         PaymentReviewView(
@@ -193,7 +193,7 @@ def manually_allocate_payment(event_id: str, request: PaymentAllocationCreate) -
         connection.execute("BEGIN IMMEDIATE")
         existing = connection.execute(
             "SELECT * FROM payment_resolutions WHERE idempotency_key = ? OR (shop_id = ? AND event_id = ?) LIMIT 2",
-            (request.idempotency_key, DEMO_SHOP_ID, event_id),
+            (request.idempotency_key, current_shop(), event_id),
         ).fetchall()
         if len(existing) > 1:
             raise HTTPException(status_code=409, detail="Resolution key and payment event resolve to different allocations.")
@@ -208,7 +208,7 @@ def manually_allocate_payment(event_id: str, request: PaymentAllocationCreate) -
 
         payment = connection.execute(
             "SELECT * FROM payment_events WHERE shop_id = ? AND event_id = ?",
-            (DEMO_SHOP_ID, event_id),
+            (current_shop(), event_id),
         ).fetchone()
         if payment is None:
             raise HTTPException(status_code=404, detail="Payment event not found.")
@@ -216,14 +216,14 @@ def manually_allocate_payment(event_id: str, request: PaymentAllocationCreate) -
             raise HTTPException(status_code=409, detail="Only successful unmatched or review-required payments can be manually allocated.")
         customer = connection.execute(
             "SELECT customer_id FROM customers WHERE shop_id = ? AND customer_id = ?",
-            (DEMO_SHOP_ID, request.customer_id),
+            (current_shop(), request.customer_id),
         ).fetchone()
         if customer is None:
             raise HTTPException(status_code=404, detail="Customer not found in this demo shop.")
         balance = int(connection.execute(
             """SELECT COALESCE(SUM(CASE entry_type WHEN 'CREDIT' THEN amount_paise WHEN 'REPAYMENT' THEN -amount_paise END), 0)
                FROM ledger_entries WHERE shop_id = ? AND customer_id = ? AND status = 'POSTED'""",
-            (DEMO_SHOP_ID, request.customer_id),
+            (current_shop(), request.customer_id),
         ).fetchone()[0])
         if balance <= 0:
             raise HTTPException(status_code=409, detail="Selected customer has no outstanding balance.")
@@ -241,13 +241,13 @@ def manually_allocate_payment(event_id: str, request: PaymentAllocationCreate) -
             """INSERT INTO ledger_entries
                (entry_id, shop_id, customer_id, entry_type, amount_paise, source_event_id, idempotency_key, status, created_at)
                VALUES (?, ?, ?, 'REPAYMENT', ?, ?, ?, 'POSTED', ?)""",
-            (entry_id, DEMO_SHOP_ID, request.customer_id, payment["amount_paise"], source_event_id, ledger_key, now),
+            (entry_id, current_shop(), request.customer_id, payment["amount_paise"], source_event_id, ledger_key, now),
         )
         connection.execute(
             """INSERT INTO payment_resolutions
                (resolution_id, shop_id, event_id, customer_id, amount_paise, allocation_entry_id, idempotency_key, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (resolution_id, DEMO_SHOP_ID, event_id, request.customer_id, payment["amount_paise"], entry_id, request.idempotency_key, now),
+            (resolution_id, current_shop(), event_id, request.customer_id, payment["amount_paise"], entry_id, request.idempotency_key, now),
         )
         append_event(
             connection,

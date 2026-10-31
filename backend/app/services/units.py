@@ -66,7 +66,7 @@ def parse_quantity(value: object) -> tuple[int | None, str | None]:
         return None, "Quantity was not a number."
     if isinstance(value, int):
         return value, None
-    text = str(value).strip().replace(",", "")
+    text = ascii_digits(str(value).strip().replace(",", ""))
     if normalize_alias(text) in NUMBER_WORDS:
         return NUMBER_WORDS[normalize_alias(text)], None
     try:
@@ -76,6 +76,15 @@ def parse_quantity(value: object) -> tuple[int | None, str | None]:
     if number != number.to_integral_value():
         return None, f"Quantity {text[:20]} is fractional; enter a whole count in a smaller unit."
     return int(number), None
+
+
+# Devanagari, Gujarati, Gurmukhi, Bengali, Tamil, Telugu, Kannada, Malayalam, Odia digits -> ASCII.
+_INDIC_DIGIT_BASES = (0x0966, 0x0AE6, 0x0A66, 0x09E6, 0x0BE6, 0x0C66, 0x0CE6, 0x0D66, 0x0B66)
+INDIC_DIGITS = {base + offset: str(offset) for base in _INDIC_DIGIT_BASES for offset in range(10)}
+
+
+def ascii_digits(text: str) -> str:
+    return text.translate(INDIC_DIGITS)
 
 
 MONEY_TEXT = re.compile(r"^(-)?\s*(?:₹|rs\.?|inr)?\s*(-)?\s*(\d[\d,]*(?:\.\d{1,2})?|\.\d{1,2})\s*(?:/-)?$", re.I)
@@ -90,7 +99,7 @@ def parse_money_to_paise(value: object, allow_negative: bool = False) -> tuple[i
     if isinstance(value, (int, float)):
         text = str(value)
     else:
-        text = str(value).strip()
+        text = ascii_digits(str(value).strip())
     match = MONEY_TEXT.fullmatch(text)
     if not match:
         return None, f"Amount '{text[:24]}' could not be read as rupees."

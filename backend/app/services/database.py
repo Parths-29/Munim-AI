@@ -3,6 +3,7 @@
 import os
 import sqlite3
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Iterator
 
@@ -11,6 +12,39 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB_PATH = BACKEND_ROOT / "data" / "munim.sqlite3"
 DB_PATH = Path(os.environ.get("MUNIM_DB_PATH") or DEFAULT_DB_PATH).expanduser()
 DEMO_SHOP_ID = "shop_synth_01"
+
+# Synthetic demo shops. Each persona has its own customers, stock, suppliers, and reminders.
+SHOPS = {
+    "kirana": "shop_synth_01",
+    "tea_stall": "shop_synth_tea",
+    "medical_store": "shop_synth_medical",
+}
+_CURRENT_SHOP: ContextVar[str] = ContextVar("munim_shop", default=DEMO_SHOP_ID)
+
+
+def current_shop() -> str:
+    """Shop for the current request (set from the X-Munim-Shop header); defaults to the kirana demo shop."""
+    return _CURRENT_SHOP.get()
+
+
+def resolve_shop(value: str | None) -> str:
+    if not value:
+        return DEMO_SHOP_ID
+    value = value.strip()
+    if value in SHOPS:
+        return SHOPS[value]
+    if value in SHOPS.values():
+        return value
+    raise ValueError(value)
+
+
+@contextmanager
+def use_shop(shop_id: str) -> Iterator[None]:
+    token = _CURRENT_SHOP.set(shop_id)
+    try:
+        yield
+    finally:
+        _CURRENT_SHOP.reset(token)
 
 
 SCHEMA = """

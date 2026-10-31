@@ -20,7 +20,7 @@ from app.domain.models import (
     SupplierResolution,
     SupplierView,
 )
-from app.services.database import DEMO_SHOP_ID, connect
+from app.services.database import connect, current_shop
 from app.services.events import append_event
 from app.services.ledger import normalize_alias
 
@@ -65,7 +65,7 @@ def create_supplier(request: SupplierCreate) -> SupplierView:
                 row["alias_normalized"]
                 for row in connection.execute(
                     "SELECT alias_normalized FROM supplier_aliases WHERE shop_id = ? AND supplier_id = ?",
-                    (DEMO_SHOP_ID, replay["supplier_id"]),
+                    (current_shop(), replay["supplier_id"]),
                 )
             }
             same = (
@@ -82,12 +82,12 @@ def create_supplier(request: SupplierCreate) -> SupplierView:
         connection.execute(
             """INSERT INTO suppliers(supplier_id, shop_id, display_name, contact_phone, contact_note, idempotency_key, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (supplier_id, DEMO_SHOP_ID, display_name, phone, note, request.idempotency_key, now),
+            (supplier_id, current_shop(), display_name, phone, note, request.idempotency_key, now),
         )
         for alias in aliases:
             connection.execute(
                 "INSERT INTO supplier_aliases(alias_id, shop_id, supplier_id, alias, alias_normalized) VALUES (?, ?, ?, ?, ?)",
-                (f"salias_{uuid.uuid4().hex[:12]}", DEMO_SHOP_ID, supplier_id, alias, normalize_alias(alias)),
+                (f"salias_{uuid.uuid4().hex[:12]}", current_shop(), supplier_id, alias, normalize_alias(alias)),
             )
         append_event(
             connection,
@@ -107,7 +107,7 @@ def create_supplier(request: SupplierCreate) -> SupplierView:
 def list_suppliers() -> list[SupplierView]:
     with connect() as connection:
         rows = connection.execute(
-            "SELECT supplier_id FROM suppliers WHERE shop_id = ? ORDER BY display_name", (DEMO_SHOP_ID,)
+            "SELECT supplier_id FROM suppliers WHERE shop_id = ? ORDER BY display_name", (current_shop(),)
         ).fetchall()
         return [supplier_view(connection, row["supplier_id"]) for row in rows]
 
@@ -119,7 +119,7 @@ def resolve_supplier_in(connection: sqlite3.Connection, query: str) -> SupplierR
            JOIN supplier_aliases a ON a.shop_id = s.shop_id AND a.supplier_id = s.supplier_id
            WHERE s.shop_id = ? AND a.alias_normalized = ?
            ORDER BY s.display_name""",
-        (DEMO_SHOP_ID, normalize_alias(query)),
+        (current_shop(), normalize_alias(query)),
     ).fetchall()
     matches = [supplier_view(connection, row["supplier_id"]) for row in rows]
     status = "NOT_FOUND" if not matches else "RESOLVED" if len(matches) == 1 else "AMBIGUOUS"
@@ -132,7 +132,7 @@ def resolve_supplier(query: str) -> SupplierResolution:
 
 
 def supplier_due(connection: sqlite3.Connection, supplier_id: str) -> int:
-    return int(connection.execute(DUE_SQL, (DEMO_SHOP_ID, supplier_id)).fetchone()[0])
+    return int(connection.execute(DUE_SQL, (current_shop(), supplier_id)).fetchone()[0])
 
 
 def get_supplier_balance(supplier_id: str) -> SupplierBalanceView:
@@ -143,12 +143,12 @@ def get_supplier_balance(supplier_id: str) -> SupplierBalanceView:
             for row in connection.execute(
                 """SELECT entry_type, SUM(amount_paise) AS total FROM supplier_payable_entries
                    WHERE shop_id = ? AND supplier_id = ? AND status = 'POSTED' GROUP BY entry_type""",
-                (DEMO_SHOP_ID, supplier_id),
+                (current_shop(), supplier_id),
             )
         }
         count = connection.execute(
             "SELECT COUNT(*) FROM supplier_payable_entries WHERE shop_id = ? AND supplier_id = ?",
-            (DEMO_SHOP_ID, supplier_id),
+            (current_shop(), supplier_id),
         ).fetchone()[0]
         due = supplier_due(connection, supplier_id)
     return SupplierBalanceView(
@@ -166,7 +166,7 @@ def list_supplier_entries(supplier_id: str, limit: int = 100) -> list[SupplierPa
         rows = connection.execute(
             """SELECT * FROM supplier_payable_entries WHERE shop_id = ? AND supplier_id = ?
                ORDER BY created_at DESC, entry_id DESC LIMIT ?""",
-            (DEMO_SHOP_ID, supplier_id, min(max(limit, 1), 200)),
+            (current_shop(), supplier_id, min(max(limit, 1), 200)),
         ).fetchall()
     return [entry_view(row) for row in rows]
 
@@ -226,7 +226,7 @@ def append_payable_entry(
     existing = connection.execute(
         """SELECT * FROM supplier_payable_entries
            WHERE idempotency_key = ? OR (shop_id = ? AND source_event_id = ?) LIMIT 2""",
-        (idempotency_key, DEMO_SHOP_ID, source_event_id),
+        (idempotency_key, current_shop(), source_event_id),
     ).fetchall()
     if len(existing) > 1:
         raise HTTPException(status_code=409, detail="Idempotency key and source event resolve to different supplier entries.")
@@ -257,7 +257,7 @@ def append_payable_entry(
            (entry_id, shop_id, supplier_id, entry_type, amount_paise, source_kind, source_document_id, note,
             source_event_id, idempotency_key, status, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'POSTED', ?)""",
-        (entry_id, DEMO_SHOP_ID, supplier_id, entry_type, amount_paise, source_kind, source_document_id, note,
+        (entry_id, current_shop(), supplier_id, entry_type, amount_paise, source_kind, source_document_id, note,
          source_event_id, idempotency_key, datetime.now(timezone.utc).isoformat()),
     )
     verb = "increased" if entry_type in INCREASES_DUE else "reduced"
@@ -281,7 +281,7 @@ def supplier_view(connection: sqlite3.Connection, supplier_id: str) -> SupplierV
     supplier = _require_supplier(connection, supplier_id)
     aliases = connection.execute(
         "SELECT alias FROM supplier_aliases WHERE shop_id = ? AND supplier_id = ? ORDER BY alias",
-        (DEMO_SHOP_ID, supplier_id),
+        (current_shop(), supplier_id),
     ).fetchall()
     return SupplierView(
         supplier_id=supplier["supplier_id"],
@@ -293,7 +293,7 @@ def supplier_view(connection: sqlite3.Connection, supplier_id: str) -> SupplierV
 
 def _require_supplier(connection: sqlite3.Connection, supplier_id: str) -> sqlite3.Row:
     supplier = connection.execute(
-        "SELECT * FROM suppliers WHERE shop_id = ? AND supplier_id = ?", (DEMO_SHOP_ID, supplier_id)
+        "SELECT * FROM suppliers WHERE shop_id = ? AND supplier_id = ?", (current_shop(), supplier_id)
     ).fetchone()
     if supplier is None:
         raise HTTPException(status_code=404, detail="Supplier not found in this demo shop.")

@@ -7,6 +7,7 @@ from app.services.database import DEMO_SHOP_ID, initialize_database
 from app.services.inventory import create_product, record_stock_count
 from app.services.ledger import create_customer, get_balance, post_credit
 from app.services.suppliers import create_supplier
+from app.services.catalog_seed import seed_all_catalogs
 
 
 def main() -> None:
@@ -14,6 +15,8 @@ def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     initialize_database()
+    # Full synthetic catalogs with 30 days of stock history for every persona shop.
+    catalog_counts = seed_all_catalogs()
     customer = create_customer(
         CustomerCreate(
             display_name="Raju bhai",
@@ -80,6 +83,9 @@ def main() -> None:
         print(f"Supplier: {supplier.display_name} [{supplier.supplier_id}] · payable starts at ₹0.00")
     for product in inward_products:
         print(f"Inward product: {product.name} [{product.product_id}] · unit: {product.unit}")
+    for persona, counts in catalog_counts.items():
+        print(f"{persona}: {counts['products']} products, {counts['stock_outflow_movements']} sales/wastage rows, "
+              f"{counts['stock_receipts']} deliveries, {counts['customers']} customers (synthetic)")
 
 
 if __name__ == "__main__":

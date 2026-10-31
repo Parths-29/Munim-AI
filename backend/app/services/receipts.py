@@ -16,7 +16,7 @@ from fastapi import HTTPException
 from app.domain.intake import ProposalConfirm, ReceiptLineResult, ReceiptView
 from app.services import events as events_service
 from app.services import suppliers as suppliers_service
-from app.services.database import DEMO_SHOP_ID, connect
+from app.services.database import connect, current_shop
 from app.services.inventory import on_hand_quantity
 from app.services.proposals import DraftContent, evaluate, load_row, now_utc
 from app.services.units import normalize_invoice_number
@@ -129,7 +129,7 @@ def confirm_proposal(proposal_id: str, request: ProposalConfirm, kinds: set[str]
                     invoice_number, invoice_number_normalized, invoice_date, total_paise, paid_now_paise, payable_entry_id,
                     supplier_due_before_paise, line_count, source_channel, source_event_id, idempotency_key, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (receipt_id, DEMO_SHOP_ID, proposal_id, row["version"], row["content_hash"], row["source_kind"], supplier_id,
+                (receipt_id, current_shop(), proposal_id, row["version"], row["content_hash"], row["source_kind"], supplier_id,
                  view.supplier.label, view.invoice.invoice_number, normalize_invoice_number(view.invoice.invoice_number),
                  view.invoice.invoice_date.isoformat() if view.invoice.invoice_date else None, total, paid_now,
                  payable_entry_id, due_before, len(accepted), request.source_channel, source_event_id, request.idempotency_key, created),
@@ -145,7 +145,7 @@ def confirm_proposal(proposal_id: str, request: ProposalConfirm, kinds: set[str]
                     received_unit, base_units_per_unit, unit_cost_paise, line_total_paise, source_text, on_hand_before,
                     reason, status, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'STOCK_RECEIPT', 'POSTED', ?)""",
-                (f"rmove_{uuid.uuid4().hex[:12]}", DEMO_SHOP_ID, receipt_id, line.line_id, line.matched_product_id,
+                (f"rmove_{uuid.uuid4().hex[:12]}", current_shop(), receipt_id, line.line_id, line.matched_product_id,
                  line.base_quantity, line.base_unit, line.quantity, line.unit, line.conversion_factor,
                  line.unit_cost_paise, line.line_total_paise, source_text.get(line.line_id), before, created),
             )
@@ -228,7 +228,7 @@ def receipt_view(connection: sqlite3.Connection, receipt: sqlite3.Row, idempoten
 def get_receipt(receipt_id: str) -> ReceiptView:
     with connect() as connection:
         receipt = connection.execute(
-            "SELECT * FROM stock_receipts WHERE shop_id = ? AND receipt_id = ?", (DEMO_SHOP_ID, receipt_id)
+            "SELECT * FROM stock_receipts WHERE shop_id = ? AND receipt_id = ?", (current_shop(), receipt_id)
         ).fetchone()
         if receipt is None:
             raise HTTPException(status_code=404, detail="Receipt not found in this demo shop.")

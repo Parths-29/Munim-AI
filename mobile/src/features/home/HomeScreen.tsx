@@ -111,7 +111,6 @@ const EXAMPLE_PROMPTS = [
   'What happened in the shop today?',
   'Raju bhai ka ₹50 udhaar likh do',
   'Raju bhai ka ₹300 jamma kar lo',
-  'Raju bhai ka balance batao',
   'Maggi khatam ho gaya',
 ];
 

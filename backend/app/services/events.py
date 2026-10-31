@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import sqlite3
 
 from app.domain.models import BusinessEventView
-from app.services.database import DEMO_SHOP_ID, connect
+from app.services.database import connect, current_shop
 
 
 def append_event(
@@ -28,7 +28,7 @@ def append_event(
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             f"event_{uuid.uuid4().hex[:12]}",
-            DEMO_SHOP_ID,
+            current_shop(),
             event_type,
             entity_type,
             entity_id,
@@ -53,7 +53,7 @@ def list_events(limit: int = 50) -> list[BusinessEventView]:
                WHERE shop_id = ?
                ORDER BY created_at DESC, event_id DESC
                LIMIT ?""",
-            (DEMO_SHOP_ID, bounded_limit),
+            (current_shop(), bounded_limit),
         ).fetchall()
     return [
         BusinessEventView(

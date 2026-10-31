@@ -258,6 +258,134 @@ CREATE INDEX IF NOT EXISTS ix_reminder_transitions ON reminder_transitions(remin
 """ + _append_only("reminder_transitions", "reminder transitions")
 
 
+LEDGER_PAGES = """
+-- When the money actually changed hands (e.g. the date written in a notebook).
+-- NULL means "same as created_at". Additive column; existing rows are untouched.
+ALTER TABLE ledger_entries ADD COLUMN occurred_at TEXT;
+
+CREATE TABLE IF NOT EXISTS ledger_page_proposals (
+    proposal_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('NEEDS_REVIEW', 'READY', 'CONFIRMED', 'REJECTED', 'EXPIRED')),
+    version INTEGER NOT NULL CHECK (version >= 1),
+    content_hash TEXT NOT NULL,
+    draft_json TEXT NOT NULL,
+    extraction_json TEXT NOT NULL,
+    image_sha256 TEXT,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    posted_batch_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ledger_page_revisions (
+    revision_id TEXT PRIMARY KEY,
+    proposal_id TEXT NOT NULL REFERENCES ledger_page_proposals(proposal_id),
+    version INTEGER NOT NULL,
+    content_hash TEXT NOT NULL,
+    draft_json TEXT NOT NULL,
+    actor TEXT NOT NULL CHECK (actor IN ('extraction', 'merchant', 'merchant_voice')),
+    created_at TEXT NOT NULL,
+    UNIQUE (proposal_id, version)
+);
+""" + _append_only("ledger_page_revisions", "ledger page revisions") + """
+CREATE TABLE IF NOT EXISTS ledger_page_postings (
+    batch_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    proposal_id TEXT NOT NULL UNIQUE REFERENCES ledger_page_proposals(proposal_id),
+    proposal_version INTEGER NOT NULL,
+    content_hash TEXT NOT NULL,
+    entry_count INTEGER NOT NULL CHECK (entry_count > 0),
+    customers_created INTEGER NOT NULL CHECK (customers_created >= 0),
+    idempotency_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+);
+""" + _append_only("ledger_page_postings", "ledger page postings")
+
+
+INVENTORY_V2 = """
+-- Merchant-set product profile. Append-only: the latest row per product wins.
+-- retail_price_paise is the merchant's own selling price; supplier costs never change it.
+CREATE TABLE IF NOT EXISTS product_profiles (
+    profile_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    category TEXT,
+    retail_price_paise INTEGER CHECK (retail_price_paise IS NULL OR retail_price_paise >= 0),
+    reorder_level INTEGER CHECK (reorder_level IS NULL OR reorder_level >= 0),
+    reorder_quantity INTEGER CHECK (reorder_quantity IS NULL OR reorder_quantity > 0),
+    lead_time_days INTEGER CHECK (lead_time_days IS NULL OR lead_time_days >= 0),
+    idempotency_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (shop_id, product_id) REFERENCES products(shop_id, product_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_product_profiles_latest ON product_profiles(shop_id, product_id, created_at);
+""" + _append_only("product_profiles", "product profiles") + """
+-- Stock leaving the shop. On-hand = counts + receipts + these (negative deltas).
+CREATE TABLE IF NOT EXISTS stock_outflow_movements (
+    movement_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    batch_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    quantity_delta INTEGER NOT NULL CHECK (quantity_delta < 0),
+    unit TEXT NOT NULL,
+    entered_quantity INTEGER NOT NULL CHECK (entered_quantity > 0),
+    entered_unit TEXT NOT NULL,
+    reason TEXT NOT NULL CHECK (reason IN ('SALE', 'WASTAGE', 'SELF_USE', 'RETURN_TO_SUPPLIER')),
+    unit_price_paise INTEGER CHECK (unit_price_paise IS NULL OR unit_price_paise >= 0),
+    amount_paise INTEGER CHECK (amount_paise IS NULL OR amount_paise >= 0),
+    source_channel TEXT NOT NULL,
+    source_utterance TEXT,
+    source_event_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL CHECK (status = 'POSTED'),
+    occurred_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (shop_id, product_id) REFERENCES products(shop_id, product_id),
+    UNIQUE (shop_id, source_event_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_outflows_product_time ON stock_outflow_movements(shop_id, product_id, occurred_at);
+""" + _append_only("stock_outflow_movements", "stock outflow movements")
+
+
+VOICE_AGENT = """
+-- Conversation state for the voice agent (working memory; not a ledger).
+CREATE TABLE IF NOT EXISTS agent_sessions (
+    session_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    language_code TEXT NOT NULL,
+    pending_json TEXT,
+    context_json TEXT NOT NULL,
+    turn_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Every merchant question/command and the agent's answer. Append-only; feeds support insights.
+CREATE TABLE IF NOT EXISTS agent_turns (
+    turn_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES agent_sessions(session_id),
+    shop_id TEXT NOT NULL,
+    turn_index INTEGER NOT NULL,
+    source_channel TEXT NOT NULL,
+    user_text TEXT NOT NULL,
+    wake_detected INTEGER NOT NULL CHECK (wake_detected IN (0, 1)),
+    intent TEXT,
+    status TEXT NOT NULL,
+    reply_text TEXT NOT NULL,
+    language_code TEXT NOT NULL,
+    parsed_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (session_id, turn_index)
+);
+
+CREATE INDEX IF NOT EXISTS ix_agent_turns_shop_time ON agent_turns(shop_id, created_at);
+""" + _append_only("agent_turns", "agent turns")
+
+
 def _baseline() -> str:
     from app.services.database import SCHEMA
 
@@ -270,6 +398,9 @@ MIGRATIONS: list[tuple[int, str, object]] = [
     (2, "suppliers_and_payables", SUPPLIERS),
     (3, "intake_proposals_and_stock_receipts", INTAKE_AND_RECEIPTS),
     (4, "reminder_consent_and_outbox", REMINDERS),
+    (5, "bahi_khata_ledger_pages", LEDGER_PAGES),
+    (6, "inventory_profiles_and_outflows", INVENTORY_V2),
+    (7, "voice_agent_sessions", VOICE_AGENT),
 ]
 
 
