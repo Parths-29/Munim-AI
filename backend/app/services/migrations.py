@@ -351,6 +351,41 @@ CREATE INDEX IF NOT EXISTS ix_outflows_product_time ON stock_outflow_movements(s
 """ + _append_only("stock_outflow_movements", "stock outflow movements")
 
 
+VOICE_AGENT = """
+-- Conversation state for the voice agent (working memory; not a ledger).
+CREATE TABLE IF NOT EXISTS agent_sessions (
+    session_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    language_code TEXT NOT NULL,
+    pending_json TEXT,
+    context_json TEXT NOT NULL,
+    turn_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Every merchant question/command and the agent's answer. Append-only; feeds support insights.
+CREATE TABLE IF NOT EXISTS agent_turns (
+    turn_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES agent_sessions(session_id),
+    shop_id TEXT NOT NULL,
+    turn_index INTEGER NOT NULL,
+    source_channel TEXT NOT NULL,
+    user_text TEXT NOT NULL,
+    wake_detected INTEGER NOT NULL CHECK (wake_detected IN (0, 1)),
+    intent TEXT,
+    status TEXT NOT NULL,
+    reply_text TEXT NOT NULL,
+    language_code TEXT NOT NULL,
+    parsed_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (session_id, turn_index)
+);
+
+CREATE INDEX IF NOT EXISTS ix_agent_turns_shop_time ON agent_turns(shop_id, created_at);
+""" + _append_only("agent_turns", "agent turns")
+
+
 def _baseline() -> str:
     from app.services.database import SCHEMA
 
@@ -365,6 +400,7 @@ MIGRATIONS: list[tuple[int, str, object]] = [
     (4, "reminder_consent_and_outbox", REMINDERS),
     (5, "bahi_khata_ledger_pages", LEDGER_PAGES),
     (6, "inventory_profiles_and_outflows", INVENTORY_V2),
+    (7, "voice_agent_sessions", VOICE_AGENT),
 ]
 
 
