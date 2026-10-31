@@ -14,6 +14,30 @@ Request: `{ "utterance": "what does Raju owe?", "source_channel": "text" }`. A s
 
 The prompt uses a small set of synthetic Hinglish/English command examples stored in `backend/app/services/command_nlp.py`. These are prompt examples only; they do not train or fine-tune a model. No ledger rows, transaction history, customer IDs, or product IDs are sent to Sarvam. When enabled, the submitted utterance itself is sent to Sarvam for interpretation, so users should avoid including unrelated sensitive details.
 
+## Voice-first agent (`/agent`)
+
+One turn in → one answer, reviewable proposal, or targeted question out. **Turns never write** (`writes_performed: false`).
+
+- `POST /agent/turn` — body `{ "utterance": "Raju ko paanch sau udhaar mein likho", "session_id": null, "source_channel": "voice", "transcript_original": "raju ko panch sau udhar me likho" }`, or a choice `{ "session_id": "...", "choice": { "slot_id": "customer:0", "option_id": "cust_..." } }`.
+  Response: `session_id`, `turn_index`, `status` (`answer` | `proposal` | `clarification` | `cancelled` | `info`), `message`,
+  `interpreted_by` (`gemini` | `deterministic` | `context` | `choice`), `llm` `{status, detail}` (`ok`, `disabled`, `not_configured`,
+  `unreachable`, `auth_error`, `model_not_found`, `quota`, `bad_request`, `server_error`, `invalid_output`), `transcript`
+  `{original, used, model_corrected}`, and one of:
+  - `answer` — `balance` (customer + `balance_due_paise`), `stock_check` (product + `on_hand_quantity`), or `payment_summary` / `timeline_summary` (client opens the existing views).
+  - `proposal` — `proposal_id`, `content_hash`, `actions[]` (`customer_create` | `credit` | `repayment` | `sale`, each with a summary, resolved names, `amount_paise` / quantity, before/after balance or stock, and `inferred[]` notes), `expires_at` (15 min).
+  - `clarification` — `question`, `missing[]`, optional `slot_id` + `choices[]` (answer with a `choice` turn, or just say the detail).
+- `POST /agent/proposals/{id}/confirm` — `{ "confirmed": true, "content_hash": "...", "idempotency_key": "..." }`. Applies **every** action in one SQLite transaction (customer + ledger + stock, same validation as the single endpoints); any failure rolls all of them back and the proposal stays `PENDING`. Same key → `idempotent_replay`; a different key after applying → `409 ALREADY_APPLIED`. Also `409 PROPOSAL_CANCELLED | PROPOSAL_SUPERSEDED | PROPOSAL_EXPIRED | PROPOSAL_CHANGED`.
+- `POST /agent/proposals/{id}/cancel` — marks a pending proposal cancelled.
+- `GET /agent/health?refresh=true` — Gemini connectivity via a tiny synthetic request; reports the category, model, and whether a key is configured, never the key.
+
+**Interpretation:** Gemini (`GEMINI_API_KEY`, `GEMINI_MODEL`, backend `.env` only) returns a strict JSON plan with verbatim spans; the
+deterministic Hinglish parser is the fallback. Gemini never chooses IDs or amounts: application code resolves names (exact alias →
+honorific-stripped, e.g. “Raju” → “Raju bhai” → spoken variant, e.g. “Raaju”, shown as an inference), converts amount spans to integer
+paise, requires an udhaar/jama word before choosing credit vs repayment, and asks when a name or product is ambiguous or a word is a
+possible number (“pachs” → pachis 25 / pachas 50). **Context:** per session and shop, last customer/action for 10 minutes; reused only
+with a cue (“aur”, “uske”) and shown as `inferred`; otherwise offered as a choice. A spoken “haan” never confirms; “cancel” cancels the
+pending proposal; “nahi, 600” corrects a single pending amount.
+
 ## `POST /speech/transcribe`
 
 Accepts a multipart form field named `file` with a supported audio MIME type and returns `{ "transcript", "language_code", "request_id", "provider" }`. Browser WebM uploads are normalized from codec-qualified, generic-binary, or `video/webm` metadata to `audio/webm`; a known file extension is used as a fallback for generic binary uploads. Audio is forwarded server-to-server to Sarvam's short-form `/speech-to-text` REST endpoint using model `saaras:v4` and `mode=translit`, which keeps Hindi/Hinglish commands compatible with the current Latin-script parser. The backend requires `SARVAM_API_KEY` as an environment variable or in a gitignored backend/root `.env`; the key is never sent to the mobile app. Uploads are capped at 12 MB, the app caps recordings at 20 seconds, and audio is not written to the database or disk by the endpoint. The transcript only fills the input box; sending it runs the existing parser, and any write still needs merchant confirmation. If Sarvam is unconfigured or unavailable, typed input remains available.

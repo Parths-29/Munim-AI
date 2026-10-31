@@ -127,6 +127,8 @@ Runs the deterministic Hinglish command parser tests with Node's built-in test r
 
 ## Environment variables & Phone Demo Connection
 
+**Full, tested setup for laptop web, Expo Go on a phone, and the phone browser (HTTPS/mic/CORS): [docs/PHONE_SETUP.md](../docs/PHONE_SETUP.md).**
+
 Configure `EXPO_PUBLIC_API_BASE_URL` in `mobile/.env`:
 
 Start by copying `mobile/.env.example` to `mobile/.env`, then replace the

@@ -386,6 +386,30 @@ CREATE INDEX IF NOT EXISTS ix_agent_turns_shop_time ON agent_turns(shop_id, crea
 """ + _append_only("agent_turns", "agent turns")
 
 
+# Numbered 9 on purpose: the N8 recovery branch uses 8. Migrations are independent, so either order upgrades cleanly.
+AGENT_PROPOSALS = """
+-- Reviewable multi-action write proposals from the voice agent. Nothing here is a ledger;
+-- confirming applies every action in one transaction and records the result.
+CREATE TABLE IF NOT EXISTS agent_proposals (
+    proposal_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES agent_sessions(session_id),
+    shop_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('PENDING', 'APPLIED', 'CANCELLED', 'SUPERSEDED')),
+    actions_json TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    source_utterance TEXT NOT NULL,
+    source_channel TEXT NOT NULL,
+    confirm_idempotency_key TEXT UNIQUE,
+    result_json TEXT,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_agent_proposals_session ON agent_proposals(session_id, created_at);
+"""
+
+
 def _baseline() -> str:
     from app.services.database import SCHEMA
 
@@ -401,6 +425,7 @@ MIGRATIONS: list[tuple[int, str, object]] = [
     (5, "bahi_khata_ledger_pages", LEDGER_PAGES),
     (6, "inventory_profiles_and_outflows", INVENTORY_V2),
     (7, "voice_agent_sessions", VOICE_AGENT),
+    (9, "agent_proposals", AGENT_PROPOSALS),
 ]
 
 

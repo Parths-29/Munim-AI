@@ -57,7 +57,7 @@ Paytm already offers merchant analytics and payment/business tools. The prototyp
 
 1. **Ask or record:** The merchant types a command or records a short voice clip.
 2. **Review transcript:** Sarvam returns text; the merchant can inspect/edit it before sending. Speech recognition can mishear names or numbers.
-3. **Interpret:** A deterministic parser recognizes common supported commands. For unsupported phrasing, Sarvam Chat Completions may propose a bounded intent and exact quoted spans using schema-constrained JSON. The client validates and reparses the result.
+3. **Interpret:** The backend voice agent (`POST /agent/turn`) asks Gemini for a strict structured plan (one or more actions, verbatim spans, possible transcript correction, explicit use of recent context) and falls back to deterministic Hinglish rules. Application code resolves names (honorifics and spoken variants included), computes paise, and asks one targeted question when anything is missing or ambiguous. The previous on-device parser plus Sarvam `/commands/interpret` remain as a fallback for older backends.
 4. **Resolve:** Customer and product names are matched by exact shop-scoped aliases. Missing or ambiguous matches stop for clarification; the system does not silently choose.
 5. **Preview:** A write shows the exact customer/product, amount/count, and effect before it is saved.
 6. **Confirm:** The merchant explicitly approves. The backend validates the operation and idempotency key.
@@ -94,6 +94,14 @@ Read-only checks and summaries do not need a write confirmation. Credit, repayme
   - Summarize recorded payment events.
   - Summarize recent shop activity/timeline.
 - Voice name and number recognition is not guaranteed. Review and edit the transcript before sending, especially for money and customer names.
+
+#### Voice-first agent (2026-10-31)
+
+- Natural short requests without templates: “Raju ka balance?”, “Raju ko paanch sau udhaar mein likho”, “Meena ne pachaas jama kiye”, “Rajju Sharma naya customer hai, aur uske ₹500 udhaar likho”, “Do Amul packets bech diye”, follow-ups like “Aur 500 add kar do”.
+- Read-only answers (balance, stock) run once the entity resolves; every write is a stored proposal showing customer/product, action, amount/quantity, before → after, and any inferred detail. Confirm applies all actions atomically (`POST /agent/proposals/{id}/confirm`); cancel and amount corrections (“nahi, 600”) are supported; a spoken “haan” never saves.
+- Short per-shop session context (10 minutes) is reused only with a cue (“aur”, “uske”) and is always labelled as inferred.
+- Gemini is primary when `GEMINI_API_KEY` works; otherwise the app says it understood with offline rules. Check with `python -m scripts.check_gemini`.
+- Phone setups (laptop web, Expo Go over LAN, phone browser HTTPS/mic/CORS) and what was verified: [`PHONE_SETUP.md`](PHONE_SETUP.md).
 
 ### 5.3 Inventory memory
 
